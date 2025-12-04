@@ -261,8 +261,8 @@ class ECGGuiApp:
         help_text.insert("end", "The QRS will be displayed on the graph with a verticle line and a label of either QR or S with the time it happens at.\n", ("indent",))
         help_text.insert("end", "The P and T wave detection is not quite correct yet and may show fasle positives or not pick up on some waves.\n", ("indent",))
         help_text.insert("end", "- Each of the P, Q, R, S and T points are marked with a coloured dot on the ECG line and can be manually moved by clicking and dragging on them.\n", ("indent",))
-        help_text.insert("end", "- talk about the adding of qrstp points manually here too. Also add a little about if you hover over a key poitn and click backspace or delete it will remove that key point\n\n", ("indent",)) # TODO: finish this
-
+        help_text.insert("end", "- There are tabs on the bottom tool bar in the ECG Viewer. From this you can select the movement tab or the addition tab. The addition tab will allow you to add either a T,Q,R,S,P key point into the ECG. This will be placed in the middle of the plot and you can then move this to the desired location.\n", ("indent",))
+        help_text.insert("end", "- When hovering over each key point your cursor will change to a hand symbol. From this you can either click and hold to move the point or if you press the backspace key or delete key on your keyboard you can delete this point from the ecg.\n\n", ("indent",))
         help_text.insert("end", "Exit\n", ("heading",))
         help_text.insert("end", "– Click Exit when you're finished.\n\n", ("indent",))
 
