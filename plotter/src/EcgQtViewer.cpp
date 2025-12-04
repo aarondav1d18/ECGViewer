@@ -8,11 +8,6 @@
 #include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QWidget>
-// TODO: Remove milivolts option and just expect volts everywhere
-
-// TODO: Edit the drag thing so that it either cant go beyond data limits (no empty space)
-// or update with blank space when dragged beyond data limits
-// TODO: Make pybindings for ECGConfig instead of importing from Python
 
 ECGViewerQt::ECGViewerQt(const QVector<double>& t,
                          const QVector<double>& vOrig,
@@ -23,7 +18,6 @@ ECGViewerQt::ECGViewerQt(const QVector<double>& t,
                          bool has_ylim,
                          double ymin,
                          double ymax,
-                         bool as_mv,
                          bool hide_artifacts,
                          const QVector<double>& pTimes,
                          const QVector<double>& pVals,
@@ -86,7 +80,7 @@ ECGViewerQt::ECGViewerQt(const QVector<double>& t,
 
     // Axes labels
     plot_->xAxis->setLabel("Time (s)");
-    plot_->yAxis->setLabel(as_mv ? "Voltage (mV)" : "Voltage (V)");
+    plot_->yAxis->setLabel("Voltage (V)");
     plot_->xAxis->grid()->setVisible(true);
     plot_->yAxis->grid()->setVisible(true);
 
@@ -203,9 +197,49 @@ ECGViewerQt::ECGViewerQt(const QVector<double>& t,
             plot_->setInteractions(QCP::iRangeDrag | QCP::iRangeZoom);
         }
     });
+    // Stop user from dragging window to negative x and also allow use to drag instead of using
+    // arrow keys or slider
+    connect(plot_->xAxis, qOverload<const QCPRange &>(&QCPAxis::rangeChanged),
+            this, [this](const QCPRange &newRange)
+    {
+        if (suppressRangeHandler_)
+            return;
 
+        double xLower = newRange.lower;
+        double xUpper = newRange.upper;
+        double width  = newRange.size();
 
+        const double minLower = 0.0;
+        const double maxUpper = total_time_;
 
+        if (xLower < minLower) {
+            xLower = minLower;
+            xUpper = xLower + width;
+        }
+
+        if (xUpper > maxUpper) {
+            xUpper = maxUpper;
+            xLower = xUpper - width;
+        }
+
+        suppressRangeHandler_ = true;
+        plot_->xAxis->setRange(xLower, xUpper);
+        suppressRangeHandler_ = false;
+
+        double clampedLower = xLower;
+
+        double maxLower = std::max(0.0, total_time_ - window_s_);
+
+        if (clampedLower > maxLower) clampedLower = maxLower;
+
+        int startSample = static_cast<int>(clampedLower * fs_);
+        if (startSample < 0) startSample = 0;
+        if (startSample > max_start_sample_) startSample = max_start_sample_;
+
+        suppressRangeHandler_ = true;
+        slider_->setValue(startSample);
+        suppressRangeHandler_ = false;
+    });
 
     connect(btnLeft_, &QPushButton::clicked,
             this, [this, buttonStep]() {
@@ -315,7 +349,7 @@ void ECGViewerQt::updateWindow(int startSample) {
             txNoise.push_back(tRel);
             vyNoise.push_back(vC);
 
-            // If you ever want original-artifact-only:
+            // original-artifact-only:
             // txOrigArt.push_back(tRel);
             // vyOrigArt.push_back(vO);
         } else {

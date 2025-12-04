@@ -21,7 +21,6 @@ public:
                 bool has_ylim,
                 double ymin,
                 double ymax,
-                bool as_mv,
                 bool hide_artifacts,
                 const QVector<double>& pTimes,
                 const QVector<double>& pVals,
@@ -60,7 +59,7 @@ private:
     int window_samples_;
     int max_start_sample_;
     bool hide_artifacts_;
-
+    bool suppressRangeHandler_ = false;
     bool zoomRectMode_ = false;
 
 

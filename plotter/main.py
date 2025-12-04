@@ -35,11 +35,6 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Fixed y-axis limits, e.g. --ylim -2 2 (mV if --mv, else V)",
     )
     ap.add_argument(
-        "--mv",
-        action="store_true",
-        help="Display in millivolts (multiply by 1000)",
-    )
-    ap.add_argument(
         "--bandpass",
         action="store_true",
         help="Apply 0.5–40 Hz bandpass (requires SciPy)",
@@ -70,7 +65,6 @@ def main(argv: List[str] | None = None) -> int:
     cfg = ViewerConfig(
         window_s=args.window,
         ylim=tuple(args.ylim) if args.ylim else None,
-        as_mv=args.mv,
         hide_artifacts=args.hide_artifacts,
     )
     viewer = ECGViewer(t, v, fs, cfg)

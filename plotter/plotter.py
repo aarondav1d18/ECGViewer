@@ -19,7 +19,6 @@ from ecg_qt_viewer import show_ecg_viewer  # C++/Qt pybind module
 class ViewerConfig:
     window_s: float = 10.0
     ylim: Optional[Tuple[float, float]] = (-0.1, 0.15)
-    as_mv: bool = False
     downsample_full: int = 50_000   # kept for API compatibility; not used here
     downsample_window: int = 20_000 # kept for API compatibility; not used here
     hide_artifacts: bool = False  # kept for API compatibility; not used here
@@ -55,12 +54,8 @@ class ECGViewer:
         self.window_s = min(self.cfg.window_s, max(1.0, self.total_s))
 
         # Units
-        self.as_mv = self.cfg.as_mv
         self.hide_artifacts = self.cfg.hide_artifacts
-        if self.as_mv:
-            self.v_plot = self.v_in * 1000.0
-        else:
-            self.v_plot = self.v_in
+        self.v_plot = self.v_in
 
         # Artifacts and cleaned signal
         self.art_times = detect_artifacts(self.t, self.v_in, self.fs)
@@ -92,7 +87,6 @@ class ECGViewer:
             float(self.fs),
             self.window_s,
             self.cfg.ylim,
-            self.as_mv,
             self.hide_artifacts,
             self.P_times, self.P_vals,
             self.Q_times, self.Q_vals,

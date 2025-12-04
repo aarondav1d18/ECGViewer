@@ -29,7 +29,6 @@ static void show_ecg_viewer(
     double fs,
     double window_s,
     py::object ylim,
-    bool as_mv,
     bool hide_artifacts,
     py::array_t<double> p_times,
     py::array_t<double> p_vals,
@@ -42,8 +41,8 @@ static void show_ecg_viewer(
     py::array_t<double> t_times,
     py::array_t<double> t_vals)
 {
-    auto tq = toQVector1D<double>(t,       "t");
-    auto vOrigQ = toQVector1D<double>(v_orig,  "v_orig");
+    auto tq = toQVector1D<double>(t, "t");
+    auto vOrigQ = toQVector1D<double>(v_orig, "v_orig");
     auto vCleanQ = toQVector1D<double>(v_clean, "v_clean");
     auto artQ = toQVector1D<unsigned char>(art_mask, "art_mask");
 
@@ -65,15 +64,15 @@ static void show_ecg_viewer(
     }
 
     auto pTimesQ = toQVector1D<double>(p_times, "p_times");
-    auto pValsQ = toQVector1D<double>(p_vals,  "p_vals");
+    auto pValsQ = toQVector1D<double>(p_vals, "p_vals");
     auto qTimesQ = toQVector1D<double>(q_times, "q_times");
-    auto qValsQ = toQVector1D<double>(q_vals,  "q_vals");
+    auto qValsQ = toQVector1D<double>(q_vals, "q_vals");
     auto rTimesQ = toQVector1D<double>(r_times, "r_times");
-    auto rValsQ = toQVector1D<double>(r_vals,  "r_vals");
+    auto rValsQ = toQVector1D<double>(r_vals, "r_vals");
     auto sTimesQ = toQVector1D<double>(s_times, "s_times");
-    auto sValsQ = toQVector1D<double>(s_vals,  "s_vals");
+    auto sValsQ = toQVector1D<double>(s_vals, "s_vals");
     auto tTimesQ = toQVector1D<double>(t_times, "t_times");
-    auto tValsQ = toQVector1D<double>(t_vals,  "t_vals");
+    auto tValsQ = toQVector1D<double>(t_vals, "t_vals");
 
     // simple length checks: allow zero-length for "no points"
     auto checkPair = [](const QVector<double>& a, const QVector<double>& b, const char* name) {
@@ -100,7 +99,6 @@ static void show_ecg_viewer(
         has_ylim,
         ymin,
         ymax,
-        as_mv,
         hide_artifacts,
         pTimesQ, pValsQ,
         qTimesQ, qValsQ,
@@ -124,7 +122,6 @@ PYBIND11_MODULE(ecg_qt_viewer, m)
         py::arg("fs"),
         py::arg("window_s"),
         py::arg("ylim") = py::none(),
-        py::arg("as_mv") = false,
         py::arg("hide_artifacts") = false,
         py::arg("p_times"),
         py::arg("p_vals"),
