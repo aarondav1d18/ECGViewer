@@ -1,0 +1,86 @@
+name: C++ Build
+
+on:
+  push:
+    branches:
+      - '**' # run on all branches
+  pull_request:
+    branches:
+      - '**' # run on all PRs (merge requests)
+
+jobs:
+  build-and-package:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install system dependencies (C++/Qt/pybind)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            python3-dev \
+            python3-tk \
+            pybind11-dev \
+            tk-dev \
+            tcl-dev \
+            libgl1 \
+            libglib2.0-0 \
+            libx11-dev \
+            libxcb1 \
+            libxext6 \
+            libxrender1 \
+            libsm6 \
+            libxkbcommon-x11-0 \
+            libxcb-icccm4 \
+            libxcb-image0 \
+            libxcb-keysyms1 \
+            libxcb-render-util0 \
+            libxcb-xinerama0 \
+            libxcb-randr0 \
+            libxcb-shape0 \
+            libxcb-sync1 \
+            libxcb-xfixes0 \
+            qtbase5-dev \
+            qt5-qmake
+
+      - name: Install Python dependencies
+        run: |
+          pip install --upgrade pip
+          pip install --no-cache-dir -r requirements.txt
+
+      # Configure CMake in the plotter directory (mirrors: mkdir build && cd build && cmake ..)
+      - name: Configure C++ project
+        working-directory: plotter
+        run: |
+          mkdir -p build
+          cd build
+          cmake .. -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build C++ project
+        working-directory: plotter/build
+        run: |
+          make -j"$(nproc)"
+
+      # - name: Run tests
+      #   working-directory: plotter/build
+      #   run: ctest --output-on-failure
+
+      - name: Package C++ build outputs
+        run: |
+          # Package everything in plotter/build as a tarball
+          tar czf cpp-build-artifacts.tar.gz -C plotter/build .
+
+      - name: Upload C++ package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpp-package
+          path: cpp-build-artifacts.tar.gz
