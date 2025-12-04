@@ -6,12 +6,9 @@ from tkinter import filedialog, messagebox
 from tkinter import ttk
 from typing import List
 
-import main as ecg_main  # this is your existing main.py (with main(argv))
+import main as ecg_main
 
 
-# -------------------------------------------------------------------- #
-# Small tooltip helper
-# -------------------------------------------------------------------- #
 class ToolTip:
     def __init__(self, widget: tk.Widget, text: str, delay: int = 500) -> None:
         self.widget = widget
@@ -114,15 +111,12 @@ class ToolTip:
             self._tip_window = None
 
 
-# -------------------------------------------------------------------- #
-# GUI Application
-# -------------------------------------------------------------------- #
 class ECGGuiApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         root.title("ECG Viewer Launcher")
 
-        # ---- Variables ----
+        # Variables 
         self.file_var = tk.StringVar()
         self.window_var = tk.StringVar(value="0.4")
         self.ymin_var = tk.StringVar()
@@ -130,7 +124,7 @@ class ECGGuiApp:
         self.show_artifacts_var = tk.BooleanVar(value=True)  # NEW: artefact toggle
         self.status_var = tk.StringVar(value="Select an ECG file and click Run.")
 
-        # ---- Root layout ----
+        # Root layout 
         root.minsize(580, 420)
         root.columnconfigure(0, weight=1)
         root.rowconfigure(0, weight=1)
@@ -148,7 +142,7 @@ class ECGGuiApp:
 
         self._build_menu()
 
-        # ---- Header ----
+        # Header 
         header = ttk.Label(
             main_frame,
             text="ECG Viewer",
@@ -163,7 +157,7 @@ class ECGGuiApp:
         )
         subheader.grid(row=1, column=0, sticky="w", pady=(0, 8))
 
-        # ---- File selection ----
+        # File selection 
         file_frame = ttk.LabelFrame(main_frame, text="Input ECG file")
         file_frame.grid(row=2, column=0, sticky="ew", pady=(0, 8))
         file_frame.columnconfigure(1, weight=1)
@@ -175,7 +169,7 @@ class ECGGuiApp:
         browse_btn.grid(row=0, column=2, sticky="e", padx=6, pady=6)
         ToolTip(browse_btn, "Choose a .txt ECG file from disk.")
 
-        # ---- Viewer settings ----
+        # Viewer settings 
         basic_frame = ttk.LabelFrame(main_frame, text="Viewer settings")
         basic_frame.grid(row=3, column=0, sticky="ew", pady=(0, 8))
         basic_frame.columnconfigure(1, weight=1)
@@ -198,7 +192,6 @@ class ECGGuiApp:
         ymax_entry = ttk.Entry(basic_frame, textvariable=self.ymax_var, width=8)
         ymax_entry.grid(row=1, column=2, sticky="w", padx=(35, 2))
 
-        # NEW: artefact visualisation option
         show_art_chk = ttk.Checkbutton(
             basic_frame,
             text="Show original ECG with artefacts",
@@ -211,7 +204,7 @@ class ECGGuiApp:
             "If unticked, only the visually corrected (clean) ECG is shown."
         )
 
-        # ---- Help box (improved appearance) ----
+        # Help box 
         help_frame = ttk.LabelFrame(main_frame, text="How to use the ECG viewer")
         help_frame.grid(row=4, column=0, sticky="nsew", pady=(0, 8))
         help_frame.columnconfigure(0, weight=1)
@@ -250,7 +243,7 @@ class ECGGuiApp:
         help_text.insert("end", "– Move through the ECG using the slider at the bottom.\n", ("indent",))
         help_text.insert("end", "– The Left and Right buttons also move through the recording.\n", ("indent",))
         help_text.insert("end", "– You can use the keyboard: Left/A = move left, Right/D = move right.\n", ("indent",))
-        help_text.insert("end", "– Dragging the ECG left/right works, but may show blank space (will be improved).\n\n", ("indent",))
+        help_text.insert("end", "– Dragging the ECG left/right will traverse the ECG like other methods.\n\n", ("indent",))
 
         help_text.insert("end", "Zooming\n", ("heading",))
         help_text.insert("end", "– Use the mouse wheel to zoom in and out.\n", ("indent",))
@@ -260,6 +253,15 @@ class ECGGuiApp:
         help_text.insert("end", "Viewing\n", ("heading",))
         help_text.insert("end", "– Reset View returns everything to a normal, clear layout.\n", ("indent",))
         help_text.insert("end", "– Coloured markers show the P, Q, R, S and T points automatically.\n\n", ("indent",))
+
+        help_text.insert("end", "Key Points\n", ("heading",))
+        help_text.insert("end", "– The ECG viewer shows a cleaned version of the ECG signal.\n", ("indent",))
+        help_text.insert("end", "– Artefact markers indicate noisy/corrupted sections of the ECG.\n", ("indent",))
+        help_text.insert("end", "– You can choose to show/hide the original ECG with artefacts.\n", ("indent",))
+        help_text.insert("end", "The QRS will be displayed on the graph with a verticle line and a label of either QR or S with the time it happens at.\n", ("indent",))
+        help_text.insert("end", "The P and T wave detection is not quite correct yet and may show fasle positives or not pick up on some waves.\n", ("indent",))
+        help_text.insert("end", "- Each of the P, Q, R, S and T points are marked with a coloured dot on the ECG line and can be manually moved by clicking and dragging on them.\n", ("indent",))
+        help_text.insert("end", "- talk about the adding of qrstp points manually here too. Also add a little about if you hover over a key poitn and click backspace or delete it will remove that key point\n\n", ("indent",)) # TODO: finish this
 
         help_text.insert("end", "Exit\n", ("heading",))
         help_text.insert("end", "– Click Exit when you're finished.\n\n", ("indent",))
@@ -271,7 +273,7 @@ class ECGGuiApp:
 
         help_text.configure(state="disabled")
 
-        # ---- Bottom bar ----
+        # Bottom bar 
         bottom_frame = ttk.Frame(main_frame)
         bottom_frame.grid(row=5, column=0, sticky="ew")
         bottom_frame.columnconfigure(0, weight=1)
@@ -299,7 +301,7 @@ class ECGGuiApp:
 
         ttk.Button(btn_frame, text="Close", command=root.destroy).grid(row=0, column=1)
 
-        # ---- Bindings ----
+        # Bindings 
         self.file_entry.focus_set()
         self.file_var.trace_add("write", self._on_file_change)
         root.bind("<Return>", lambda e: self.run_viewer())
@@ -308,9 +310,6 @@ class ECGGuiApp:
         root.update_idletasks()
         self._center_window()
 
-    # ------------------------------------------------------------------ #
-    # Menu
-    # ------------------------------------------------------------------ #
     def _build_menu(self) -> None:
         menubar = tk.Menu(self.root)
 
@@ -332,7 +331,6 @@ class ECGGuiApp:
             "A simple launcher for the ECG Qt viewer."
         )
 
-    # ------------------------------------------------------------------ #
     def _center_window(self) -> None:
         self.root.update_idletasks()
         w = self.root.winfo_width()
@@ -351,9 +349,6 @@ class ECGGuiApp:
             self.run_button.config(state="disabled")
             self.status_var.set("Select an ECG file.")
 
-    # ------------------------------------------------------------------ #
-    # Callbacks
-    # ------------------------------------------------------------------ #
     def browse_file(self) -> None:
         path = filedialog.askopenfilename(
             title="Select ECG text file",
@@ -408,7 +403,6 @@ class ECGGuiApp:
         ecg_main.main(argv)
 
 
-# -------------------------------------------------------------------- #
 def main() -> None:
     root = tk.Tk()
     ECGGuiApp(root)

@@ -8,7 +8,14 @@
 #include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QWidget>
+#include <QTabWidget>
+#include <QComboBox>
+#include <QLabel>
 
+
+// Can move some of the helpers from here to header to reduce amount of code in this file
+// or can just leave it or split into multiple files if it gets too big but should be fine while
+// working on this class for now.
 ECGViewerQt::ECGViewerQt(const QVector<double>& t,
                          const QVector<double>& vOrig,
                          const QVector<double>& vClean,
@@ -77,6 +84,11 @@ ECGViewerQt::ECGViewerQt(const QVector<double>& t,
 
     plot_ = new QCustomPlot(central);
     vbox->addWidget(plot_, 1);
+    plot_->setInteractions(QCP::iRangeDrag | QCP::iRangeZoom | QCP::iSelectItems);
+
+    connect(plot_, &QCustomPlot::mousePress,  this, &ECGViewerQt::onPlotMousePress);
+    connect(plot_, &QCustomPlot::mouseMove,   this, &ECGViewerQt::onPlotMouseMove);
+    connect(plot_, &QCustomPlot::mouseRelease,this, &ECGViewerQt::onPlotMouseRelease);
 
     // Axes labels
     plot_->xAxis->setLabel("Time (s)");
@@ -143,35 +155,64 @@ ECGViewerQt::ECGViewerQt(const QVector<double>& t,
     graphS_->setData(sTimes_, sVals_);
     graphT_->setData(tTimes_, tVals_);
 
-    // Slider + buttons 
-    auto* hbox = new QHBoxLayout();
+    // Tabs at the bottom: Traversal + Manual Insert
+    tabWidget_ = new QTabWidget(central);
 
-    btnLeft_ = new QPushButton("Left", central);
-    btnRight_ = new QPushButton("Right", central);
-    btnZoomIn_ = new QPushButton("Zoom In", central);
-    btnZoomOut_ = new QPushButton("Zoom Out", central);
-    btnResetView_ = new QPushButton("Reset View", central);
-    btnExit_ = new QPushButton("Exit", central);
-    btnZoomRect_ = new QPushButton("Rect Zoom", central);
+    // Traversal tab (existing controls)
+    QWidget* traversalTab = new QWidget(tabWidget_);
+    auto* traversalLayout = new QHBoxLayout(traversalTab);
+
+    btnLeft_ = new QPushButton("Left", traversalTab);
+    btnRight_ = new QPushButton("Right", traversalTab);
+    btnZoomIn_ = new QPushButton("Zoom In", traversalTab);
+    btnZoomOut_ = new QPushButton("Zoom Out", traversalTab);
+    btnResetView_ = new QPushButton("Reset View", traversalTab);
+    btnExit_ = new QPushButton("Exit", traversalTab);
+    btnZoomRect_ = new QPushButton("Rect Zoom", traversalTab);
     btnZoomRect_->setCheckable(true);
 
-    slider_ = new QSlider(Qt::Horizontal, central);
-
+    slider_ = new QSlider(Qt::Horizontal, traversalTab);
     slider_->setMinimum(0);
     slider_->setMaximum(max_start_sample_);
     slider_->setSingleStep(1);
 
-    // Layout: buttons then slider (adjust order as you like)
-    hbox->addWidget(btnLeft_);
-    hbox->addWidget(btnRight_);
-    hbox->addWidget(btnZoomIn_);
-    hbox->addWidget(btnZoomOut_);
-    hbox->addWidget(btnResetView_);
-    hbox->addWidget(btnExit_);
-    hbox->addWidget(btnZoomRect_);  // add here
-    hbox->addWidget(slider_);
+    traversalLayout->addWidget(btnLeft_);
+    traversalLayout->addWidget(btnRight_);
+    traversalLayout->addWidget(btnZoomIn_);
+    traversalLayout->addWidget(btnZoomOut_);
+    traversalLayout->addWidget(btnResetView_);
+    traversalLayout->addWidget(btnExit_);
+    traversalLayout->addWidget(btnZoomRect_);
+    traversalLayout->addWidget(slider_);
 
-    vbox->addLayout(hbox);
+    traversalTab->setLayout(traversalLayout);
+    tabWidget_->addTab(traversalTab, "Traversal");
+
+    // Manual insert tab
+    QWidget* manualTab = new QWidget(tabWidget_);
+    auto* manualLayout = new QHBoxLayout(manualTab);
+
+    auto* typeLabel = new QLabel("Fiducial type:", manualTab);
+    manualTypeCombo_ = new QComboBox(manualTab);
+    manualTypeCombo_->addItem("P");
+    manualTypeCombo_->addItem("Q");
+    manualTypeCombo_->addItem("R");
+    manualTypeCombo_->addItem("S");
+    manualTypeCombo_->addItem("T");
+
+    manualInsertButton_ = new QPushButton("Insert at centre", manualTab);
+
+    manualLayout->addWidget(typeLabel);
+    manualLayout->addWidget(manualTypeCombo_);
+    manualLayout->addWidget(manualInsertButton_);
+    manualLayout->addStretch(1);
+
+    manualTab->setLayout(manualLayout);
+    tabWidget_->addTab(manualTab, "Manual keypoints");
+
+    // Add the tab widget to bottom of main layout
+    vbox->addWidget(tabWidget_);
+
 
     setCentralWidget(central);
     setWindowTitle("ECG Viewer (Qt)");
@@ -183,6 +224,8 @@ ECGViewerQt::ECGViewerQt(const QVector<double>& t,
     auto buttonStep = [this]() {
         return static_cast<int>(0.2 * window_samples_);
     };
+    connect(manualInsertButton_, &QPushButton::clicked,
+        this, &ECGViewerQt::onInsertManualFiducial);
 
     connect(btnZoomRect_, &QPushButton::toggled,
             this, [this](bool checked)
@@ -202,7 +245,8 @@ ECGViewerQt::ECGViewerQt(const QVector<double>& t,
     connect(plot_->xAxis, qOverload<const QCPRange &>(&QCPAxis::rangeChanged),
             this, [this](const QCPRange &newRange)
     {
-        if (suppressRangeHandler_)
+        // Avoid recursion or interference while dragging fiducials
+        if (suppressRangeHandler_ || draggingFiducial_)
             return;
 
         double xLower = newRange.lower;
@@ -227,19 +271,22 @@ ECGViewerQt::ECGViewerQt(const QVector<double>& t,
         suppressRangeHandler_ = false;
 
         double clampedLower = xLower;
-
         double maxLower = std::max(0.0, total_time_ - window_s_);
 
-        if (clampedLower > maxLower) clampedLower = maxLower;
+        if (clampedLower > maxLower)
+            clampedLower = maxLower;
 
         int startSample = static_cast<int>(clampedLower * fs_);
-        if (startSample < 0) startSample = 0;
-        if (startSample > max_start_sample_) startSample = max_start_sample_;
+        if (startSample < 0)
+            startSample = 0;
+        if (startSample > max_start_sample_)
+            startSample = max_start_sample_;
 
         suppressRangeHandler_ = true;
-        slider_->setValue(startSample);
+        slider_->setValue(startSample);   // triggers updateWindow(...)
         suppressRangeHandler_ = false;
     });
+
 
     connect(btnLeft_, &QPushButton::clicked,
             this, [this, buttonStep]() {
@@ -280,6 +327,95 @@ ECGViewerQt::ECGViewerQt(const QVector<double>& t,
     // Initial window
     updateWindow(0);
 }
+
+QVector<double>& ECGViewerQt::timesFor(FiducialType type)
+{
+    switch (type) {
+    case FiducialType::P: return pTimes_;
+    case FiducialType::Q: return qTimes_;
+    case FiducialType::R: return rTimes_;
+    case FiducialType::S: return sTimes_;
+    case FiducialType::T: return tTimes_;
+    }
+    // just to silence compiler, should never hit:
+    return pTimes_;
+}
+
+QVector<double>& ECGViewerQt::valsFor(FiducialType type)
+{
+    switch (type) {
+    case FiducialType::P: return pVals_;
+    case FiducialType::Q: return qVals_;
+    case FiducialType::R: return rVals_;
+    case FiducialType::S: return sVals_;
+    case FiducialType::T: return tVals_;
+    }
+    return pVals_;
+}
+
+void ECGViewerQt::onInsertManualFiducial()
+{
+    QString choice = manualTypeCombo_ ? manualTypeCombo_->currentText() : QString("R");
+
+    FiducialType type = FiducialType::R;
+    if (choice == "P")      type = FiducialType::P;
+    else if (choice == "Q") type = FiducialType::Q;
+    else if (choice == "R") type = FiducialType::R;
+    else if (choice == "S") type = FiducialType::S;
+    else if (choice == "T") type = FiducialType::T;
+
+    // Insert at the centre of the current window
+    double newTime = 0.5 * (currentX0 + currentX1);
+
+    // Clamp to full duration just in case
+    if (newTime < 0.0) newTime = 0.0;
+    if (newTime > total_time_) newTime = total_time_;
+
+    // Get Y value from clean signal at nearest sample
+    double absTime = t_.first() + newTime;
+    int sampleIndex = static_cast<int>(std::round((absTime - t_.first()) * fs_));
+    if (sampleIndex < 0) sampleIndex = 0;
+    if (sampleIndex >= vClean_.size()) sampleIndex = vClean_.size() - 1;
+    double newVal = vClean_[sampleIndex];
+
+    // Insert into correct vectors, keeping them sorted by time
+    QVector<double>& times = timesFor(type);
+    QVector<double>& vals = valsFor(type);
+
+    int insertIndex = 0;
+    while (insertIndex < times.size() && times[insertIndex] < newTime)
+        ++insertIndex;
+
+    times.insert(insertIndex, newTime);
+    vals.insert(insertIndex, newVal);
+
+    // Update the correct scatter graph
+    switch (type) {
+    case FiducialType::P:
+        graphP_->setData(pTimes_, pVals_);
+        break;
+    case FiducialType::Q:
+        graphQ_->setData(qTimes_, qVals_);
+        break;
+    case FiducialType::R:
+        graphR_->setData(rTimes_, rVals_);
+        break;
+    case FiducialType::S:
+        graphS_->setData(sTimes_, sVals_);
+        break;
+    case FiducialType::T:
+        graphT_->setData(tTimes_, tVals_);
+        break;
+    }
+
+    // Recreate fiducial lines/labels for the current window
+    updateFiducialLines(currentX0, currentX1);
+
+    // Replot so the new fiducial appears (and is draggable using your existing logic)
+    plot_->replot();
+}
+
+
 /// @brief Nudges the current window by a specified number of samples
 /// @param deltaSamples Number of samples to nudge (positive or negative)
 void ECGViewerQt::nudge(int deltaSamples) {
@@ -374,6 +510,8 @@ void ECGViewerQt::updateWindow(int startSample) {
     // X-axis limits: window_s_ seconds from startSample
     const double x0 = t_[startSample] - t0;
     const double x1 = x0 + window_s_;
+    currentX0 = x0;
+    currentX1 = x1;
     plot_->xAxis->setRange(x0, x1);
 
     updateFiducialLines(x0, x1);
@@ -406,24 +544,29 @@ void ECGViewerQt::updateWindowLength(double newWindowSeconds) {
 
 /// @brief Updates fiducial lines on the plot within the specified x-axis range
 void ECGViewerQt::updateFiducialLines(double x0, double x1) {
-    // Remove old items
+    // remove old items
     for (auto* item : fiducialItems_) {
         plot_->removeItem(item);
     }
     fiducialItems_.clear();
+    fiducialsCurrent_.clear();
 
     auto addLinesFor = [this, x0, x1](const QVector<double>& times,
+                                      const QVector<double>& vals,
+                                      FiducialType type,
                                       const QString& label,
-                                      const QColor& color) {
-        for (double t : times) {
+                                      const QColor& color)
+    {
+        for (int i = 0; i < times.size(); ++i) {
+            double t = times[i];
             if (t < x0 || t > x1)
                 continue;
 
-            // vertical line at t
             auto* line = new QCPItemLine(plot_);
             line->start->setCoords(t, plot_->yAxis->range().lower);
             line->end->setCoords(t, plot_->yAxis->range().upper);
             line->setPen(QPen(color, 0.8, Qt::DashLine));
+            line->setSelectable(true);
 
             auto* txt = new QCPItemText(plot_);
             txt->position->setCoords(t, plot_->yAxis->range().upper);
@@ -432,16 +575,225 @@ void ECGViewerQt::updateFiducialLines(double x0, double x1) {
             txt->setColor(color);
             txt->setClipToAxisRect(true);
             txt->setRotation(-90);
+            txt->setSelectable(true);
 
             fiducialItems_.push_back(line);
             fiducialItems_.push_back(txt);
+
+            FiducialVisual fv;
+            fv.type = type;
+            fv.index = i;
+            fv.line = line;
+            fv.text = txt;
+            fiducialsCurrent_.push_back(fv);
         }
     };
-    addLinesFor(pTimes_, "P", Qt::blue);
-    addLinesFor(qTimes_, "Q", Qt::green);
-    addLinesFor(rTimes_, "R", Qt::red);
-    addLinesFor(sTimes_, "S", Qt::magenta);
-    addLinesFor(tTimes_, "T", QColor(255, 140, 0));
+
+    addLinesFor(pTimes_, pVals_, FiducialType::P, "P", Qt::blue);
+    addLinesFor(qTimes_, qVals_, FiducialType::Q, "Q", Qt::green);
+    addLinesFor(rTimes_, rVals_, FiducialType::R, "R", Qt::red);
+    addLinesFor(sTimes_, sVals_, FiducialType::S, "S", Qt::magenta);
+    addLinesFor(tTimes_, tVals_, FiducialType::T, "T", QColor(255, 140, 0));
+}
+
+void ECGViewerQt::deleteHoveredFiducial()
+{
+    if (hoverFiducialIndex_ < 0 || hoverFiducialIndex_ >= fiducialsCurrent_.size())
+        return;
+
+    const auto f = fiducialsCurrent_[hoverFiducialIndex_];
+
+    // Remove from underlying time/value vectors
+    QVector<double>& times = timesFor(f.type);
+    QVector<double>& vals  = valsFor(f.type);
+
+    if (f.index < 0 || f.index >= times.size())
+        return;
+
+    times.remove(f.index);
+    vals.remove(f.index);
+
+    // Update the appropriate scatter graph
+    switch (f.type) {
+    case FiducialType::P:
+        graphP_->setData(pTimes_, pVals_);
+        break;
+    case FiducialType::Q:
+        graphQ_->setData(qTimes_, qVals_);
+        break;
+    case FiducialType::R:
+        graphR_->setData(rTimes_, rVals_);
+        break;
+    case FiducialType::S:
+        graphS_->setData(sTimes_, sVals_);
+        break;
+    case FiducialType::T:
+        graphT_->setData(tTimes_, tVals_);
+        break;
+    }
+
+    // Recreate fiducial lines/labels for current window
+    updateFiducialLines(currentX0, currentX1);
+
+    hoverFiducialIndex_ = -1;
+
+    plot_->replot();
+}
+
+
+void ECGViewerQt::onPlotMousePress(QMouseEvent* event)
+{
+    if (event->button() != Qt::LeftButton)
+        return;
+
+    if (zoomRectMode_) // don't drag labels while in rect zoom mode
+        return;
+
+    QCPAbstractItem* item = plot_->itemAt(event->pos(), true);
+    if (!item)
+        return;
+
+    for (int i = 0; i < fiducialsCurrent_.size(); ++i) {
+        auto& f = fiducialsCurrent_[i];
+        if (f.line == item || f.text == item) {
+            draggingFiducial_ = true;
+            activeFiducialIndex_ = i;
+
+            double clickX = plot_->xAxis->pixelToCoord(event->pos().x());
+            double currentX = timesFor(f.type)[f.index];  // current fiducial x (seconds)
+            dragOffsetSeconds_ = currentX - clickX;
+
+            // Save current interactions and disable range drag while dragging the fiducial
+            savedInteractions_ = plot_->interactions();
+            plot_->setInteraction(QCP::iRangeDrag, false);
+
+            setCursor(Qt::ClosedHandCursor);
+            break;
+        }
+    }
+}
+
+
+void ECGViewerQt::onPlotMouseMove(QMouseEvent* event)
+{
+    // 1) If we are currently dragging a fiducial, do the drag logic
+    if (draggingFiducial_ && activeFiducialIndex_ >= 0)
+    {
+        auto& f = fiducialsCurrent_[activeFiducialIndex_];
+
+        double mouseX = plot_->xAxis->pixelToCoord(event->pos().x());
+        double newTime = mouseX + dragOffsetSeconds_;
+
+        // Clamp to full signal duration [0, total_time_]
+        if (newTime < 0.0)
+            newTime = 0.0;
+        else if (newTime > total_time_)
+            newTime = total_time_;
+
+        double yLow  = plot_->yAxis->range().lower;
+        double yHigh = plot_->yAxis->range().upper;
+
+        f.line->start->setCoords(newTime, yLow);
+        f.line->end->setCoords(newTime, yHigh);
+        f.text->position->setCoords(newTime, yHigh);
+
+        QString label;
+        switch (f.type) {
+        case FiducialType::P: label = "P"; break;
+        case FiducialType::Q: label = "Q"; break;
+        case FiducialType::R: label = "R"; break;
+        case FiducialType::S: label = "S"; break;
+        case FiducialType::T: label = "T"; break;
+        }
+
+        f.text->setText(QString("%1 @ %2s").arg(label).arg(newTime, 0, 'f', 5));
+
+        // Keep closed hand while dragging
+        setCursor(Qt::ClosedHandCursor);
+
+        plot_->replot(QCustomPlot::rpQueuedReplot);
+        return;
+    }
+
+    // If we're not dragging: do hover feedback (open hand over fiducials)
+    if (zoomRectMode_) {
+        setCursor(Qt::ArrowCursor);
+        hoverFiducialIndex_ = -1;
+        return;
+    }
+
+    QCPAbstractItem* item = plot_->itemAt(event->pos(), true);
+    int foundIndex = -1;
+
+    if (item) {
+        for (int i = 0; i < fiducialsCurrent_.size(); ++i) {
+            const auto& f = fiducialsCurrent_[i];
+            if (f.line == item || f.text == item) {
+                foundIndex = i;
+                break;
+            }
+        }
+    }
+
+    hoverFiducialIndex_ = foundIndex;
+
+    if (hoverFiducialIndex_ >= 0) {
+        setCursor(Qt::OpenHandCursor);
+    } else {
+        setCursor(Qt::ArrowCursor);
+    }
+}
+
+
+
+void ECGViewerQt::onPlotMouseRelease(QMouseEvent* event)
+{
+    if (event->button() != Qt::LeftButton)
+        return;
+
+    if (!draggingFiducial_ || activeFiducialIndex_ < 0)
+        return;
+
+    auto& f = fiducialsCurrent_[activeFiducialIndex_];
+
+    // Final x position from the line item
+    double newTime = f.line->start->coords().x();
+
+    // Update underlying time & value vectors
+    QVector<double>& times = timesFor(f.type);
+    QVector<double>& vals = valsFor(f.type);
+
+    if (f.index >= 0 && f.index < times.size()) {
+        times[f.index] = newTime;
+
+        // Optional: snap Y to underlying clean signal at the nearest sample
+        double absTime = t_.first() + newTime; // because we used tRel = t[i] - t0
+        int sampleIndex = static_cast<int>(std::round((absTime - t_.first()) * fs_));
+        if (sampleIndex < 0)
+            sampleIndex = 0;
+        if (sampleIndex >= vClean_.size())
+            sampleIndex = vClean_.size() - 1;
+
+        vals[f.index] = vClean_[sampleIndex];
+    }
+
+    // Refresh scatter graphs so points move too
+    graphP_->setData(pTimes_, pVals_);
+    graphQ_->setData(qTimes_, qVals_);
+    graphR_->setData(rTimes_, rVals_);
+    graphS_->setData(sTimes_, sVals_);
+    graphT_->setData(tTimes_, tVals_);
+
+    // Reset drag state and cursor
+    draggingFiducial_ = false;
+    activeFiducialIndex_ = -1;
+    dragOffsetSeconds_ = 0.0;
+    setCursor(Qt::ArrowCursor);
+
+    // Restore original interactions (re-enable range drag, etc.)
+    plot_->setInteractions(savedInteractions_);
+
+    plot_->replot();
 }
 
 /// @brief Handles key press events for nudge functionality
@@ -453,13 +805,21 @@ void ECGViewerQt::keyPressEvent(QKeyEvent* event) {
     case Qt::Key_A:
         nudge(-step);
         break;
+
     case Qt::Key_Right:
     case Qt::Key_D:
         nudge(+step);
         break;
+
+    case Qt::Key_Delete:
+    case Qt::Key_Backspace:
+        deleteHoveredFiducial();
+        break;
+
     default:
         QMainWindow::keyPressEvent(event);
         break;
     }
 }
+
 

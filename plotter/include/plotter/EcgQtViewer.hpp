@@ -2,6 +2,7 @@
 
 #include <QMainWindow>
 #include <QVector>
+#include "qcustomplot.h"
 
 class QCustomPlot;
 class QSlider;
@@ -34,6 +35,8 @@ public:
                 const QVector<double>& tVals,
                 QWidget* parent = nullptr);
 
+    enum class FiducialType { P, Q, R, S, T };
+
 protected:
     void keyPressEvent(QKeyEvent* event) override;
 
@@ -42,6 +45,7 @@ private:
     void nudge(int deltaSamples);
     void updateFiducialLines(double x0, double x1);
     void updateWindowLength(double newWindowSeconds);
+    void deleteHoveredFiducial(); 
 
     QVector<double> t_;
     QVector<double> vOrig_;
@@ -61,6 +65,9 @@ private:
     bool hide_artifacts_;
     bool suppressRangeHandler_ = false;
     bool zoomRectMode_ = false;
+    bool blockWindowUpdates_ = false;
+    double currentX0{0.0}, currentX1{0.0};
+    int hoverFiducialIndex_ = -1;   // index into fiducialsCurrent_ for hover, -1 = none
 
 
     double total_time_;
@@ -70,6 +77,25 @@ private:
     double y_min_orig_;
     double y_max_orig_;
 
+    struct FiducialVisual
+    {
+        FiducialType type;
+        int index;                // index into pTimes_/qTimes_/...
+        QCPItemLine* line = nullptr;
+        QCPItemText* text = nullptr;
+    };
+
+    QVector<FiducialVisual> fiducialsCurrent_;  // items currently visible in window
+
+    bool draggingFiducial_ = false;
+    int  activeFiducialIndex_ = -1;
+    double dragOffsetSeconds_ = 0.0;            // click offset from fiducial x
+
+    // helpers to get the correct vecs from a type
+    QVector<double>& timesFor(FiducialType type);
+    QVector<double>& valsFor(FiducialType type);
+
+    QCP::Interactions savedInteractions_;
     QCustomPlot* plot_;
     QSlider* slider_;
     QPushButton* btnLeft_;
@@ -79,6 +105,11 @@ private:
     QPushButton* btnResetView_;
     QPushButton* btnExit_;
     QPushButton* btnZoomRect_ = nullptr;
+    // UI for tabbed controls
+    QTabWidget* tabWidget_ = nullptr;
+    QComboBox*  manualTypeCombo_ = nullptr;
+    QPushButton* manualInsertButton_ = nullptr;
+
 
     QCPGraph* graphCleanBase_;
     QCPGraph* graphCleanNoise_;
@@ -92,5 +123,12 @@ private:
     QCPGraph* graphT_;
 
     QVector<QCPAbstractItem*> fiducialItems_;
+
+private slots:
+    void onPlotMousePress(QMouseEvent* event);
+    void onPlotMouseMove(QMouseEvent* event);
+    void onPlotMouseRelease(QMouseEvent* event);
+    void onInsertManualFiducial();
+
 
 };
