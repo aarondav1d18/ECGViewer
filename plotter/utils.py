@@ -6,7 +6,6 @@ from scipy.ndimage import uniform_filter1d
 from scipy.interpolate import UnivariateSpline
 from scipy.signal import butter, sosfiltfilt, find_peaks, peak_widths, medfilt
 from dataclasses import dataclass
-from line_profiler import profile
 
 @dataclass
 class BeatFeatures:
@@ -117,7 +116,6 @@ def parse_ecg_file(path: str) -> tuple[np.ndarray, np.ndarray, float | None]:
 
     return t, v, fs, meta
 
-@profile
 def detrend_and_filter(v: np.ndarray, fs: float | None, bandpass: bool = True) -> np.ndarray:
     '''
     Remove baseline drift or apply a 0.5–40 Hz bandpass filter.
@@ -297,7 +295,6 @@ def detect_artifacts(t: np.ndarray, v: np.ndarray, fs: float | None) -> np.ndarr
     return times[mask]
 
 
-@profile
 def clean_with_noise(t: np.ndarray, y: np.ndarray, art_times: np.ndarray, fs: float | None) -> np.ndarray:
     if art_times.size == 0 or not fs or fs <= 0:
         return y.copy()
@@ -599,7 +596,6 @@ def _is_near_artifact(idx: int,
 
     return False
 
-@profile
 def detect_fiducials(
     t: np.ndarray,
     v: np.ndarray,

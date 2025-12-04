@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from typing import Optional, Tuple, List
 
 import numpy as np
-from line_profiler import profile
 
 
 from utils import (  # or from .utils if used as a package
