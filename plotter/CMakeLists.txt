@@ -15,8 +15,11 @@ find_package(pybind11 REQUIRED)
 find_package(Qt5 COMPONENTS Core Widgets PrintSupport REQUIRED)
 
 set(ECG_QT_VIEWER_SOURCES
-    src/EcgQtViewer.cpp
-    src/EcgQtModule.cpp
+    src/ECGViewerSetup.cpp
+    src/ECGViewerPlot.cpp
+    src/ECGViewerAnnotations.cpp
+    src/ECGViewerInteractions.cpp
+    src/ECGModule.cpp
     src/qcustomplot.cpp
     include/plotter/qcustomplot.h
 )

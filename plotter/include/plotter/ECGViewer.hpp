@@ -2,6 +2,13 @@
 
 #include <QMainWindow>
 #include <QVector>
+#include <QComboBox>
+#include <QTabWidget>
+#include <QPushButton>
+#include <QSlider>
+#include <QKeyEvent>
+#include <QMouseEvent>
+
 #include "qcustomplot.h"
 
 class QCustomPlot;
@@ -10,10 +17,11 @@ class QPushButton;
 class QCPGraph;
 class QCPAbstractItem;
 
-class ECGViewerQt : public QMainWindow
+namespace ECGViewer {
+class ECGViewer : public QMainWindow
 {
 public:
-    ECGViewerQt(const QVector<double>& t,
+    ECGViewer(const QVector<double>& t,
                 const QVector<double>& vOrig,
                 const QVector<double>& vClean,
                 const QVector<unsigned char>& artMask,
@@ -92,8 +100,32 @@ private:
     double dragOffsetSeconds_ = 0.0;            // click offset from fiducial x
 
     // helpers to get the correct vecs from a type
-    QVector<double>& timesFor(FiducialType type);
-    QVector<double>& valsFor(FiducialType type);
+    inline QVector<double>& timesFor(FiducialType type)
+    {
+        switch (type) {
+        case FiducialType::P: return pTimes_;
+        case FiducialType::Q: return qTimes_;
+        case FiducialType::R: return rTimes_;
+        case FiducialType::S: return sTimes_;
+        case FiducialType::T: return tTimes_;
+        }
+
+        throw std::runtime_error("Invalid FiducialType in timesFor()");
+    }
+
+
+    inline QVector<double>& valsFor(FiducialType type)
+    {
+        switch (type) {
+        case FiducialType::P: return pVals_;
+        case FiducialType::Q: return qVals_;
+        case FiducialType::R: return rVals_;
+        case FiducialType::S: return sVals_;
+        case FiducialType::T: return tVals_;
+        }
+        
+        throw std::runtime_error("Invalid FiducialType in valsFor()");
+    }
 
     QCP::Interactions savedInteractions_;
     QCustomPlot* plot_;
@@ -132,3 +164,4 @@ private slots:
 
 
 };
+} // namespace ECGViewer

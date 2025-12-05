@@ -2,7 +2,7 @@
 #include <pybind11/numpy.h>
 
 #include <QApplication>
-#include "EcgQtViewer.hpp"
+#include "ECGViewer.hpp"
 
 namespace py = pybind11;
 
@@ -89,7 +89,7 @@ static void show_ecg_viewer(
     char* argv[] = {nullptr};
     QApplication app(argc, argv);
 
-    ECGViewerQt viewer(
+    ECGViewer::ECGViewer viewer(
         tq,
         vOrigQ,
         vCleanQ,
