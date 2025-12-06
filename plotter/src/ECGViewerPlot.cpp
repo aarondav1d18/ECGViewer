@@ -94,6 +94,7 @@ void ECGViewer::updateWindow(int startSample) {
     plot_->xAxis->setRange(x0, x1);
 
     updateFiducialLines(x0, x1);
+    updateNoteItems(x0, x1);
 
     plot_->replot();
 }
@@ -109,7 +110,7 @@ void ECGViewer::updateWindowLength(double newWindowSeconds) {
     window_s_ = newWindowSeconds;
     window_samples_ = std::max(1, static_cast<int>(window_s_ * fs_));
 
-    max_start_sample_ = std::max(0, t_.size() - window_samples_ - 1);
+    max_start_sample_ = std::max(0, static_cast<int>(t_.size()) - window_samples_ - 1);
     slider_->setMaximum(max_start_sample_);
 
     int startSample = slider_->value();
@@ -174,6 +175,53 @@ void ECGViewer::updateFiducialLines(double x0, double x1) {
     addLinesFor(sTimes_, sVals_, FiducialType::S, "S", Qt::magenta);
     addLinesFor(tTimes_, tVals_, FiducialType::T, "T", QColor(255, 140, 0));
 }
+
+void ECGViewer::updateNoteItems(double x0, double x1)
+{
+    // Remove old note items
+    for (auto& nv : notesCurrent_) {
+        if (nv.line)
+            plot_->removeItem(nv.line);
+        if (nv.text)
+            plot_->removeItem(nv.text);
+    }
+    notesCurrent_.clear();
+
+    const double yLow  = plot_->yAxis->range().lower;
+    const double yHigh = plot_->yAxis->range().upper;
+
+    for (int i = 0; i < notes_.size(); ++i) {
+        const Note& n = notes_[i];
+        double t = n.time;
+        if (t < x0 || t > x1)
+            continue;
+
+        // vertical "stem" (shorter than fiducials if you like)
+        auto* line = new QCPItemLine(plot_);
+        line->start->setCoords(t, yLow);
+        line->end->setCoords(t, yHigh);
+        line->setPen(QPen(Qt::darkCyan, 1.0, Qt::DashLine));
+        line->setSelectable(true);
+
+        // text label at top (“tag”)
+        auto* txt = new QCPItemText(plot_);
+        txt->position->setCoords(t, yHigh);
+        txt->setPositionAlignment(Qt::AlignRight | Qt::AlignTop);
+        txt->setText(n.tag.isEmpty() ? QStringLiteral("Note") : n.tag);
+        txt->setColor(Qt::darkCyan);
+        txt->setBrush(QBrush(QColor(255, 255, 255, 180))); // little white bg
+        txt->setPadding(QMargins(2, 2, 2, 2));
+        txt->setClipToAxisRect(true);
+        txt->setSelectable(true);
+
+        NoteVisual nv;
+        nv.noteIndex = i;
+        nv.line = line;
+        nv.text = txt;
+        notesCurrent_.push_back(nv);
+    }
+}
+
 
 /// @brief Nudges the current window by a specified number of samples
 /// @param deltaSamples Number of samples to nudge (positive or negative)

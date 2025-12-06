@@ -50,6 +50,27 @@ void ECGViewer::deleteHoveredFiducial()
     plot_->replot();
 }
 
+void ECGViewer::onPlotMouseDoubleClick(QMouseEvent* event)
+{
+    if (event->button() != Qt::LeftButton)
+        return;
+
+    QCPAbstractItem* item = plot_->itemAt(event->pos(), true);
+    if (!item)
+        return;
+
+    // Find note under cursor
+    for (int i = 0; i < notesCurrent_.size(); ++i) {
+        const auto& nv = notesCurrent_[i];
+        if (nv.text == item || nv.line == item) {
+            int noteIndex = nv.noteIndex;
+            openNoteEditor(noteIndex);
+            return;
+        }
+    }
+}
+
+
 void ECGViewer::onPlotMousePress(QMouseEvent* event)
 {
     if (event->button() != Qt::LeftButton)
@@ -62,6 +83,26 @@ void ECGViewer::onPlotMousePress(QMouseEvent* event)
     if (!item)
         return;
 
+    // Check notes first
+    for (int i = 0; i < notesCurrent_.size(); ++i) {
+        auto& nv = notesCurrent_[i];
+        if (nv.line == item || nv.text == item) {
+            draggingNote_ = true;
+            activeNoteVisualIndex_ = i;
+
+            double clickX = plot_->xAxis->pixelToCoord(event->pos().x());
+            const Note& note = notes_[nv.noteIndex];
+            double currentX = note.time;
+            noteDragOffsetSeconds_ = currentX - clickX;
+
+            savedInteractions_ = plot_->interactions();
+            plot_->setInteraction(QCP::iRangeDrag, false);
+            setCursor(Qt::ClosedHandCursor);
+            return;
+        }
+    }
+
+    // Fallback to fiducials
     for (int i = 0; i < fiducialsCurrent_.size(); ++i) {
         auto& f = fiducialsCurrent_[i];
         if (f.line == item || f.text == item) {
@@ -72,21 +113,61 @@ void ECGViewer::onPlotMousePress(QMouseEvent* event)
             double currentX = timesFor(f.type)[f.index];  // current fiducial x (seconds)
             dragOffsetSeconds_ = currentX - clickX;
 
-            // Save current interactions and disable range drag while dragging the fiducial
             savedInteractions_ = plot_->interactions();
             plot_->setInteraction(QCP::iRangeDrag, false);
 
             setCursor(Qt::ClosedHandCursor);
-            break;
+            return;
         }
     }
 }
 
+
 void ECGViewer::onPlotMouseMove(QMouseEvent* event)
 {
-    // 1) If we are currently dragging a fiducial, do the drag logic
+    // If we are currently dragging a note, handle that first
+    if (draggingNote_ && activeNoteVisualIndex_ >= 0)
+    {
+        if (activeNoteVisualIndex_ < 0 || activeNoteVisualIndex_ >= notesCurrent_.size())
+            return;
+
+        auto& nv = notesCurrent_[activeNoteVisualIndex_];
+        if (nv.noteIndex < 0 || nv.noteIndex >= notes_.size())
+            return;
+
+        Note& n = notes_[nv.noteIndex];
+
+        double mouseX = plot_->xAxis->pixelToCoord(event->pos().x());
+        double newTime = mouseX + noteDragOffsetSeconds_;
+
+        // Clamp to full signal duration [0, total_time_]
+        if (newTime < 0.0)
+            newTime = 0.0;
+        else if (newTime > total_time_)
+            newTime = total_time_;
+
+        n.time = newTime;
+
+        double yLow  = plot_->yAxis->range().lower;
+        double yHigh = plot_->yAxis->range().upper;
+
+        nv.line->start->setCoords(newTime, yLow);
+        nv.line->end->setCoords(newTime, yHigh);
+        nv.text->position->setCoords(newTime, yHigh);
+
+        // Keep closed hand while dragging
+        setCursor(Qt::ClosedHandCursor);
+
+        plot_->replot(QCustomPlot::rpQueuedReplot);
+        return;
+    }
+
+    // If we are currently dragging a fiducial, do that logic
     if (draggingFiducial_ && activeFiducialIndex_ >= 0)
     {
+        if (activeFiducialIndex_ < 0 || activeFiducialIndex_ >= fiducialsCurrent_.size())
+            return;
+
         auto& f = fiducialsCurrent_[activeFiducialIndex_];
 
         double mouseX = plot_->xAxis->pixelToCoord(event->pos().x());
@@ -123,39 +204,69 @@ void ECGViewer::onPlotMouseMove(QMouseEvent* event)
         return;
     }
 
-    // If we're not dragging: do hover feedback (open hand over fiducials)
+    // If we're not dragging: hover feedback
     if (zoomRectMode_) {
         setCursor(Qt::ArrowCursor);
         hoverFiducialIndex_ = -1;
+        hoverNoteIndex_ = -1;
         return;
     }
 
     QCPAbstractItem* item = plot_->itemAt(event->pos(), true);
-    int foundIndex = -1;
+    int foundNoteIndex = -1;
+    int foundFidIndex  = -1;
 
     if (item) {
-        for (int i = 0; i < fiducialsCurrent_.size(); ++i) {
-            const auto& f = fiducialsCurrent_[i];
-            if (f.line == item || f.text == item) {
-                foundIndex = i;
+        // Check notes first
+        for (int i = 0; i < notesCurrent_.size(); ++i) {
+            const auto& nv = notesCurrent_[i];
+            if (nv.line == item || nv.text == item) {
+                foundNoteIndex = i;
                 break;
+            }
+        }
+
+        // If no note was hit, check fiducials
+        if (foundNoteIndex < 0) {
+            for (int i = 0; i < fiducialsCurrent_.size(); ++i) {
+                const auto& f = fiducialsCurrent_[i];
+                if (f.line == item || f.text == item) {
+                    foundFidIndex = i;
+                    break;
+                }
             }
         }
     }
 
-    hoverFiducialIndex_ = foundIndex;
+    hoverNoteIndex_ = foundNoteIndex;
+    hoverFiducialIndex_ = foundFidIndex;
 
-    if (hoverFiducialIndex_ >= 0) {
+    if (hoverNoteIndex_ >= 0 || hoverFiducialIndex_ >= 0) {
         setCursor(Qt::OpenHandCursor);
     } else {
         setCursor(Qt::ArrowCursor);
     }
 }
 
+
+
 void ECGViewer::onPlotMouseRelease(QMouseEvent* event)
 {
     if (event->button() != Qt::LeftButton)
         return;
+
+        // Note drag end
+    if (draggingNote_ && activeNoteVisualIndex_ >= 0) {
+        draggingNote_ = false;
+        activeNoteVisualIndex_ = -1;
+        noteDragOffsetSeconds_ = 0.0;
+
+        setCursor(Qt::ArrowCursor);
+        plot_->setInteractions(savedInteractions_);
+        plot_->replot();
+        // no need to recreate items – we directly updated them
+        return;
+    }
 
     if (!draggingFiducial_ || activeFiducialIndex_ < 0)
         return;
@@ -219,8 +330,12 @@ void ECGViewer::keyPressEvent(QKeyEvent* event) {
 
     case Qt::Key_Delete:
     case Qt::Key_Backspace:
-        deleteHoveredFiducial();
+        if (hoverNoteIndex_ >= 0)
+            deleteHoveredNote();
+        else
+            deleteHoveredFiducial();
         break;
+
 
     default:
         QMainWindow::keyPressEvent(event);

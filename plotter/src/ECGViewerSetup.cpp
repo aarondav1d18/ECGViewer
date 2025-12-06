@@ -73,9 +73,9 @@ ECGViewer::ECGViewer(const QVector<double>& t,
 
     window_samples_ = static_cast<int>(window_s_ * fs_);
     if (window_samples_ <= 0)
-        window_samples_ = std::min(t_.size(), 1);
+        window_samples_ = std::min(static_cast<int>(t_.size()), 1);
 
-    max_start_sample_ = std::max(0, t_.size() - window_samples_ - 1);
+    max_start_sample_ = std::max(0, static_cast<int>(t_.size()) - window_samples_ - 1);
 
     // UI setup 
     auto* central = new QWidget(this);
@@ -209,6 +209,29 @@ ECGViewer::ECGViewer(const QVector<double>& t,
     manualTab->setLayout(manualLayout);
     tabWidget_->addTab(manualTab, "Manual keypoints");
 
+    QWidget* notes = new QWidget(tabWidget_);
+    auto* notesLayout = new QHBoxLayout(notes);
+
+    // add a list widget to show existing notes
+    // maybe a text edit for note content
+    // could be a whole new class for notes management
+    // maybe jump to note time in plot when clicking on note
+    // etc etc
+    // for now just a placeholder label
+    btnNewNote_ = new QPushButton("New Note", notes);
+    btnSaveNotes_ = new QPushButton("Save Notes", notes);
+    btnLoadNotes_ = new QPushButton("Load Notes", notes);
+    btnDeleteNote_ = new QPushButton("Delete Note", notes);
+
+    notesLayout->addWidget(btnNewNote_);
+    notesLayout->addWidget(btnSaveNotes_);
+    notesLayout->addWidget(btnLoadNotes_);
+    notesLayout->addWidget(btnDeleteNote_);
+    notesLayout->addStretch(1);
+
+    notes->setLayout(notesLayout);
+    tabWidget_->addTab(notes, "Notes");
+
     // Add the tab widget to bottom of main layout
     vbox->addWidget(tabWidget_);
 
@@ -250,7 +273,7 @@ ECGViewer::ECGViewer(const QVector<double>& t,
 
         double xLower = newRange.lower;
         double xUpper = newRange.upper;
-        double width  = newRange.size();
+        double width = newRange.size();
 
         const double minLower = 0.0;
         const double maxUpper = total_time_;
@@ -321,6 +344,12 @@ ECGViewer::ECGViewer(const QVector<double>& t,
             this, [this]() {
                 close();
             });
+    connect(btnNewNote_, &QPushButton::clicked,
+            this, &ECGViewer::onNewNote);
+
+    // double-click on plot to open note editor if note under cursor
+    connect(plot_, &QCustomPlot::mouseDoubleClick,
+            this, &ECGViewer::onPlotMouseDoubleClick);
 
 
     // Initial window

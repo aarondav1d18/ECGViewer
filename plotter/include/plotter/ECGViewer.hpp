@@ -16,8 +16,21 @@ class QSlider;
 class QPushButton;
 class QCPGraph;
 class QCPAbstractItem;
+class QListWidget;
+class QLineEdit;
+class QListWidgetItem;
 
 namespace ECGViewer {
+
+struct Note
+{
+    QString tag;      // easier with Qt widgets
+    QString detail;   // free-text detail
+    double time = 0;  // seconds (relative, like fiducials)
+    double volts = 0; // optional; can be y-value at note time
+};
+
+
 class ECGViewer : public QMainWindow
 {
 public:
@@ -54,6 +67,9 @@ private:
     void updateFiducialLines(double x0, double x1);
     void updateWindowLength(double newWindowSeconds);
     void deleteHoveredFiducial(); 
+    void updateNoteItems(double x0, double x1);
+    void openNoteEditor(int noteIndex);
+    void deleteHoveredNote();
 
     QVector<double> t_;
     QVector<double> vOrig_;
@@ -92,12 +108,27 @@ private:
         QCPItemLine* line = nullptr;
         QCPItemText* text = nullptr;
     };
+    struct NoteVisual
+    {
+        int noteIndex = -1;       // index into notes_
+        QCPItemLine* line = nullptr;
+        QCPItemText* text = nullptr;
+    };
 
     QVector<FiducialVisual> fiducialsCurrent_;  // items currently visible in window
 
     bool draggingFiducial_ = false;
     int  activeFiducialIndex_ = -1;
     double dragOffsetSeconds_ = 0.0;            // click offset from fiducial x
+
+    QVector<Note> notes_;                  // all notes (time, tag, detail, volts)
+    QVector<NoteVisual> notesCurrent_;     // only notes visible in current window
+
+    int hoverNoteIndex_ = -1;              // index into notesCurrent_, -1 = none
+    bool draggingNote_ = false;
+    int  activeNoteVisualIndex_ = -1;
+    double noteDragOffsetSeconds_ = 0.0;
+
 
     // helpers to get the correct vecs from a type
     inline QVector<double>& timesFor(FiducialType type)
@@ -137,10 +168,17 @@ private:
     QPushButton* btnResetView_;
     QPushButton* btnExit_;
     QPushButton* btnZoomRect_ = nullptr;
+    QPushButton* btnNewNote_;
+    QPushButton* btnSaveNotes_;
+    QPushButton* btnLoadNotes_;
+    QPushButton* btnDeleteNote_;
     // UI for tabbed controls
     QTabWidget* tabWidget_ = nullptr;
     QComboBox*  manualTypeCombo_ = nullptr;
     QPushButton* manualInsertButton_ = nullptr;
+    QListWidget* notesListWidget_ = nullptr;
+    QLineEdit* notesSearchEdit_ = nullptr;
+
 
 
     QCPGraph* graphCleanBase_;
@@ -161,6 +199,8 @@ private slots:
     void onPlotMouseMove(QMouseEvent* event);
     void onPlotMouseRelease(QMouseEvent* event);
     void onInsertManualFiducial();
+    void onPlotMouseDoubleClick(QMouseEvent* event);
+    void onNewNote();
 
 
 };

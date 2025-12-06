@@ -21,6 +21,8 @@ class BeatFeatures:
     t_idx: int | None = None
 
 def parse_ecg_file(path: str) -> tuple[np.ndarray, np.ndarray, float | None]:
+    # Deprecated but kept for backward compatibility and testing against C++
+    # version
     '''
     Parse an ECG text file into time, voltage, and sampling frequency.
     Reads only numeric two-column lines, ignoring headers such as
@@ -304,7 +306,7 @@ def clean_with_noise(t: np.ndarray, y: np.ndarray, art_times: np.ndarray, fs: fl
 
     base_window_ms = 12
     extra_tail_ms = 10
-    noise_strength = 0.1
+    noise_strength = 0.05
     taper_ms = 8
     fit_neighbors = 45
 
