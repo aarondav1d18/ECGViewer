@@ -6,7 +6,7 @@ from typing import Optional, Tuple
 import tkinter as tk
 from ECGViewer import parse_ecg_file_cpp as parse_ecg_file_cpp
 from ecg_analysis import detrend_and_filter, ECGViewer, ViewerConfig, ECGGuiApp
-
+from PyQt5.QtCore import QFileInfo
 
 def run_ecg_viewer(
     file_path: str,
@@ -22,6 +22,8 @@ def run_ecg_viewer(
 
     # Load (C++ parser)
     t, v_raw, fs, meta = parse_ecg_file_cpp(file_path)
+    # get prefix of file name
+    file_prefix = QFileInfo(file_path).baseName()
     if fs is None:
         raise RuntimeError(
             "Could not determine sampling rate "
@@ -35,9 +37,9 @@ def run_ecg_viewer(
     cfg = ViewerConfig(
         window_s=window,
         ylim=ylim,
-        hide_artifacts=hide_artifacts,
+        hide_artifacts=hide_artifacts
     )
-    viewer = ECGViewer(t, v, fs, cfg)
+    viewer = ECGViewer(t, v, fs, cfg, file_prefix=file_prefix)
     viewer.show()
 
     return 0

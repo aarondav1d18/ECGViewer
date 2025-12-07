@@ -39,7 +39,8 @@ static void show_ecg_viewer(
     py::array_t<double> s_times,
     py::array_t<double> s_vals,
     py::array_t<double> t_times,
-    py::array_t<double> t_vals)
+    py::array_t<double> t_vals,
+    const py::object& file_prefix)
 {
     auto tq = toQVector1D<double>(t, "t");
     auto vOrigQ = toQVector1D<double>(v_orig, "v_orig");
@@ -73,6 +74,13 @@ static void show_ecg_viewer(
     auto sValsQ = toQVector1D<double>(s_vals, "s_vals");
     auto tTimesQ = toQVector1D<double>(t_times, "t_times");
     auto tValsQ = toQVector1D<double>(t_vals, "t_vals");
+    QString filePrefix;
+    //convert py::object to QString
+    if (!file_prefix.is_none()) {
+        filePrefix = QString::fromStdString(py::cast<std::string>(file_prefix));
+    } else {
+        filePrefix = QStringLiteral("ecg_data");
+    }
 
     // simple length checks: allow zero-length for "no points"
     auto checkPair = [](const QVector<double>& a, const QVector<double>& b, const char* name) {
@@ -104,7 +112,8 @@ static void show_ecg_viewer(
         qTimesQ, qValsQ,
         rTimesQ, rValsQ,
         sTimesQ, sValsQ,
-        tTimesQ, tValsQ
+        tTimesQ, tValsQ,
+        filePrefix
     );
 
     viewer.show();
@@ -132,5 +141,6 @@ PYBIND11_MODULE(ECGViewer, m)
         py::arg("s_times"),
         py::arg("s_vals"),
         py::arg("t_times"),
-        py::arg("t_vals"));
+        py::arg("t_vals"),
+        py::arg("file_prefix"));
 }

@@ -21,7 +21,7 @@
 #include <QLabel>
 #include <QPushButton>
 #include <QFileInfo>
-
+#include <iostream>
 namespace ECGViewer {
 void ECGViewer::onInsertManualFiducial()
 {
@@ -308,13 +308,52 @@ void ECGViewer::onDeleteNoteFromList()
     plot_->replot();
 }
 
-void ECGViewer::onSaveNotes()
+void ECGViewer::onSaveNotes(const bool guiSave)
 {
-    if (notes_.isEmpty()) {
+    if (notes_.isEmpty() && guiSave) {
         QMessageBox::information(this, "Save Notes", "There are no notes to save.");
         return;
     }
+    if (!guiSave) {
+        // save to default location without asking
+        QVector<double> vals;
+        QVector<double> times;
+        // check if data folder is there if not make one
+        QString dataFolderPath = "./ECGData";
+        QDir dir(dataFolderPath);
+        if (!dir.exists()) {
+            dir.mkpath(".");
+        }
+        dir.setPath(dataFolderPath);
+        std::cout << "Data folder path: " << dataFolderPath.toStdString() << std::endl;
+        // get current folder path as a variable with gui
+        QString fileNameNotes = dir.filePath(QString("%1_ecg_data.json").arg(filePrefix_));
+        std::cout << "Saving to file: " << fileNameNotes.toStdString() << std::endl;
+        QFile file(fileNameNotes);
+        QJsonArray arr;
+        for (const auto& n : notes_) {
+            QJsonObject o;
+            o["tag"] = n.tag;
+            o["detail"] = n.detail;
+            o["time"] = n.time;
+            o["volts"] = n.volts;
+            // o["type"] = static_cast<int>(n.type);
+            arr.append(o);
+        }
 
+        QJsonDocument doc(arr);
+
+        QFile f(fileNameNotes);
+        if (!f.open(QIODevice::WriteOnly)) {
+            QMessageBox::warning(this, "Save Notes",
+                                 "Could not open file for writing:\n" + fileNameNotes);
+            return;
+        }
+
+        f.write(doc.toJson(QJsonDocument::Indented));
+        f.close();
+        return;
+    }
     QString fileName = QFileDialog::getSaveFileName(
         this,
         "Save Notes",
@@ -354,6 +393,59 @@ void ECGViewer::onSaveNotes()
     f.close();
 }
 
+void ECGViewer::onSave()
+{
+    QVector<double> vals;
+    QVector<double> times;
+    if (!notes_.isEmpty()) {
+        onSaveNotes(false); // save notes to default location
+    }
+    // check if data folder is there if not make one
+    QString dataFolderPath = "./ECGData";
+    QDir dir(dataFolderPath);
+    if (!dir.exists()) {
+        dir.mkpath(".");
+    }
+    dir.setPath(dataFolderPath);
+    std::cout << "Data folder path: " << dataFolderPath.toStdString() << std::endl;
+    // get current folder path as a variable with gui
+    QString fileName = dir.filePath(QString("%1_ecg_data.csv").arg(filePrefix_));
+    std::cout << "Saving to file: " << fileName.toStdString() << std::endl;
+    QFile file(fileName);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QMessageBox::warning(this, "Save ECG Data",
+                             "Could not open file for writing:\n" + fileName);
+        return;
+    }
+
+    QTextStream out(&file);
+    out << "Tag,Time,Voltage\n";
+    std::vector<FiducialType> types = {
+        FiducialType::P,
+        FiducialType::Q,
+        FiducialType::R,
+        FiducialType::S,
+        FiducialType::T
+    };
+    for (const auto& type : types) {
+        vals = valsFor(type);
+        times = timesFor(type);
+        QChar tagChar;
+        switch (type) {
+        case FiducialType::P: tagChar = 'P'; break;
+        case FiducialType::Q: tagChar = 'Q'; break;
+        case FiducialType::R: tagChar = 'R'; break;
+        case FiducialType::S: tagChar = 'S'; break;
+        case FiducialType::T: tagChar = 'T'; break;
+        }
+        for (int i = 0; i < times.size(); ++i) {
+            // use string for tag
+            out << tagChar << "," << times[i] << "," << vals[i] << "\n";
+        }
+    }
+    file.close();
+}
+
 void ECGViewer::onLoadNotes()
 {
     QString fileName = QFileDialog::getOpenFileName(
@@ -366,6 +458,18 @@ void ECGViewer::onLoadNotes()
         return;
 
     QFile f(fileName);
+    // check file name against the data prefix. if it doesn't match, warn the user
+    if (!QFileInfo(f).fileName().startsWith(filePrefix_)) {
+        QMessageBox::StandardButton reply;
+        reply = QMessageBox::question(this, "Load Notes",
+                                      "The selected notes file does not match the current ECG data prefix.\n"
+                                      "Are you sure you want to load it?",
+                                      QMessageBox::Yes|QMessageBox::No);
+        if (reply != QMessageBox::Yes) {
+            return;
+        }
+    }
+
     if (!f.open(QIODevice::ReadOnly)) {
         QMessageBox::warning(this, "Load Notes",
                              "Could not open file for reading:\n" + fileName);
@@ -555,85 +659,16 @@ void ECGViewer::onShowNotesDialog()
         refreshList();
     });
 
-    QObject::connect(btnSave, &QPushButton::clicked,
-                    &dlg, [this]()
+    QObject::connect(btnSave, &QPushButton::clicked, 
+                     &dlg, [this]()
     {
-        if (notes_.isEmpty()) {
-            QMessageBox::information(this, "Save Notes", "There are no notes to save.");
-            return;
-        }
-
-        QString fileName = QFileDialog::getSaveFileName(
-            this, "Save Notes", QString(), "Notes JSON (*.json);;All Files (*)");
-        if (fileName.isEmpty()) return;
-
-        QFileInfo fi(fileName);
-        if (fi.suffix().isEmpty()) {
-            fileName += ".json";
-        }
-
-        QJsonArray arr;
-        for (const auto& n : notes_) {
-            QJsonObject o;
-            o["tag"] = n.tag;
-            o["detail"] = n.detail;
-            o["time"] = n.time;
-            o["volts"] = n.volts;
-            arr.append(o);
-        }
-
-        QJsonDocument doc(arr);
-        QFile f(fileName);
-        if (!f.open(QIODevice::WriteOnly)) {
-            QMessageBox::warning(this, "Save Notes",
-                                "Could not open file for writing:\n" + fileName);
-            return;
-        }
-        f.write(doc.toJson(QJsonDocument::Indented));
-        f.close();
+        onSaveNotes(true);
     });
 
     QObject::connect(btnLoad, &QPushButton::clicked,
                      &dlg, [this, refreshList]()
     {
-        QString fileName = QFileDialog::getOpenFileName(
-            this, "Load Notes", QString(), "Notes JSON (*.json);;All Files (*)");
-        if (fileName.isEmpty()) return;
-
-        QFile f(fileName);
-        if (!f.open(QIODevice::ReadOnly)) {
-            QMessageBox::warning(this, "Load Notes",
-                                 "Could not open file for reading:\n" + fileName);
-            return;
-        }
-        QByteArray data = f.readAll();
-        f.close();
-
-        QJsonParseError err;
-        QJsonDocument doc = QJsonDocument::fromJson(data, &err);
-        if (err.error != QJsonParseError::NoError || !doc.isArray()) {
-            QMessageBox::warning(this, "Load Notes", "Invalid notes file.");
-            return;
-        }
-
-        QJsonArray arr = doc.array();
-        QVector<Note> loaded;
-        loaded.reserve(arr.size());
-        for (const auto& v : arr) {
-            if (!v.isObject()) continue;
-            QJsonObject o = v.toObject();
-            Note n;
-            n.tag = o.value("tag").toString();
-            n.detail = o.value("detail").toString();
-            n.time = o.value("time").toDouble();
-            n.volts = o.value("volts").toDouble();
-            if (n.time < 0.0) n.time = 0.0;
-            if (n.time > total_time_) n.time = total_time_;
-            loaded.push_back(n);
-        }
-        notes_ = loaded;
-        updateNoteItems(currentX0, currentX1);
-        plot_->replot();
+        onLoadNotes();
         refreshList();
     });
 

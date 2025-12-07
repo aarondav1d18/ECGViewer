@@ -54,6 +54,7 @@ public:
                 const QVector<double>& sVals,
                 const QVector<double>& tTimes,
                 const QVector<double>& tVals,
+                const QString& filePrefix,
                 QWidget* parent = nullptr);
 
     enum class FiducialType { P, Q, R, S, T };
@@ -72,7 +73,8 @@ private:
     void deleteHoveredNote();
     void refreshNotesList(); // rebuilds the list from notes_
     void applyNotesFilter(); // filters by search text
-    int  noteIndexFromItem(QListWidgetItem* item) const;
+    int noteIndexFromItem(QListWidgetItem* item) const;
+    void onSave();
 
     QVector<double> t_;
     QVector<double> vOrig_;
@@ -95,6 +97,7 @@ private:
     bool blockWindowUpdates_ = false;
     double currentX0{0.0}, currentX1{0.0};
     int hoverFiducialIndex_ = -1; // index into fiducialsCurrent_ for hover, -1 = none
+    const QString& filePrefix_;
 
 
     double total_time_;
@@ -164,8 +167,6 @@ private:
     QCP::Interactions savedInteractions_;
     QCustomPlot* plot_;
     QSlider* slider_;
-    QPushButton* btnLeft_;
-    QPushButton* btnRight_;
     QPushButton* btnZoomIn_;
     QPushButton* btnZoomOut_;
     QPushButton* btnResetView_;
@@ -175,6 +176,7 @@ private:
     QPushButton* btnSaveNotes_;
     QPushButton* btnLoadNotes_;
     QPushButton* btnDeleteNote_;
+    QPushButton* btnSave_;
     // UI for tabbed controls
     QTabWidget* tabWidget_ = nullptr;
     QComboBox*  manualTypeCombo_ = nullptr;
@@ -205,7 +207,7 @@ private slots:
     void onInsertManualFiducial();
     void onPlotMouseDoubleClick(QMouseEvent* event);
     void onNewNote();
-    void onSaveNotes();
+    void onSaveNotes(const bool guiSave = false);
     void onLoadNotes();
     void onDeleteNoteFromList();
     void onNotesListItemDoubleClicked(QListWidgetItem* item);

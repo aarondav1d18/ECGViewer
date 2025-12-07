@@ -42,6 +42,7 @@ ECGViewer::ECGViewer(const QVector<double>& t,
                          const QVector<double>& sVals,
                          const QVector<double>& tTimes,
                          const QVector<double>& tVals,
+                         const QString& filePrefix,
                          QWidget* parent)
     : QMainWindow(parent),
       t_(t),
@@ -55,7 +56,8 @@ ECGViewer::ECGViewer(const QVector<double>& t,
       tTimes_(tTimes), tVals_(tVals),
       fs_(fs),
       window_s_(window_s),
-      hide_artifacts_(hide_artifacts)
+      hide_artifacts_(hide_artifacts),
+      filePrefix_(filePrefix)
 {
     if (t_.size() != vOrig_.size() ||
         t_.size() != vClean_.size() ||
@@ -169,14 +171,13 @@ ECGViewer::ECGViewer(const QVector<double>& t,
     QWidget* traversalTab = new QWidget(tabWidget_);
     auto* traversalLayout = new QHBoxLayout(traversalTab);
 
-    btnLeft_ = new QPushButton("Left", traversalTab);
-    btnRight_ = new QPushButton("Right", traversalTab);
     btnZoomIn_ = new QPushButton("Zoom In", traversalTab);
     btnZoomOut_ = new QPushButton("Zoom Out", traversalTab);
     btnResetView_ = new QPushButton("Reset View", traversalTab);
     btnExit_ = new QPushButton("Exit", traversalTab);
     btnZoomRect_ = new QPushButton("Rect Zoom", traversalTab);
     btnNotesDialog_ = new QPushButton("Notes…", traversalTab);
+    btnSave_ = new QPushButton("Save", traversalTab);
     btnZoomRect_->setCheckable(true);
 
     slider_ = new QSlider(Qt::Horizontal, traversalTab);
@@ -184,14 +185,13 @@ ECGViewer::ECGViewer(const QVector<double>& t,
     slider_->setMaximum(max_start_sample_);
     slider_->setSingleStep(1);
 
-    traversalLayout->addWidget(btnLeft_);
-    traversalLayout->addWidget(btnRight_);
     traversalLayout->addWidget(btnZoomIn_);
     traversalLayout->addWidget(btnZoomOut_);
     traversalLayout->addWidget(btnResetView_);
     traversalLayout->addWidget(btnExit_);
     traversalLayout->addWidget(btnZoomRect_);
     traversalLayout->addWidget(btnNotesDialog_);
+    traversalLayout->addWidget(btnSave_);
     traversalLayout->addWidget(slider_);
 
     traversalTab->setLayout(traversalLayout);
@@ -293,16 +293,8 @@ ECGViewer::ECGViewer(const QVector<double>& t,
         suppressRangeHandler_ = false;
     });
 
-
-    connect(btnLeft_, &QPushButton::clicked,
-            this, [this, buttonStep]() {
-                nudge(-buttonStep());
-            });
-
-    connect(btnRight_, &QPushButton::clicked,
-            this, [this, buttonStep]() {
-                nudge(+buttonStep());
-            });
+    connect(btnSave_, &QPushButton::clicked,
+            this, &ECGViewer::onSave);
 
     // Zoom in/out buttons (time zoom on x-axis)
     connect(btnZoomIn_, &QPushButton::clicked,

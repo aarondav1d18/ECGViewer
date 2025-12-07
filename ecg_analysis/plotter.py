@@ -40,11 +40,13 @@ class ECGViewer:
                  t_abs: np.ndarray,
                  v: np.ndarray,
                  fs: float,
-                 cfg: ViewerConfig | None = None) -> None:
+                 cfg: ViewerConfig | None = None,
+                 file_prefix: str = None) -> None:
         self.t_abs = np.asarray(t_abs, dtype=float)
         self.v_in = np.asarray(v, dtype=float)
         self.fs = float(fs)
         self.cfg = cfg or ViewerConfig()
+        self.file_prefix = file_prefix
 
         # Time: make relative as in original viewer logic
         self.t0 = float(self.t_abs[0])
@@ -93,6 +95,7 @@ class ECGViewer:
             self.R_times, self.R_vals,
             self.S_times, self.S_vals,
             self.T_times, self.T_vals,
+            self.file_prefix,
         )
 
     # ------------------------------------------------------------------ #
