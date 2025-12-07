@@ -6,8 +6,8 @@ from typing import List
 
 import numpy as np
 
-from utils import parse_ecg_file               # Python implementation
-from parse_ecg import parse_ecg_file as parse_ecg_file_cpp  # C++ implementation
+from ecg_analysis import parse_ecg_file               # Python implementation
+from ECGViewer import parse_ecg_file as parse_ecg_file_cpp  # C++ implementation
 
 # ---------------------------------------------------------------------
 # File scan: count numeric two-column rows (ground truth row count)

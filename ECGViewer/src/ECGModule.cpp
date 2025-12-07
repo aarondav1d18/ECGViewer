@@ -111,7 +111,7 @@ static void show_ecg_viewer(
     app.exec();
 }
 
-PYBIND11_MODULE(ecg_qt_viewer, m)
+PYBIND11_MODULE(ECGViewer, m)
 {
     m.doc() = "Qt + QCustomPlot ECG viewer with artifacts, noise replacement, and fiducials";
     m.def("show_ecg_viewer", &show_ecg_viewer,

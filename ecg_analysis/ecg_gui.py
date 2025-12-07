@@ -4,9 +4,7 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import filedialog, messagebox
 from tkinter import ttk
-from typing import List
-
-import main as ecg_main
+from typing import List, Optional, Tuple, Callable
 
 
 class ToolTip:
@@ -112,8 +110,9 @@ class ToolTip:
 
 
 class ECGGuiApp:
-    def __init__(self, root: tk.Tk) -> None:
+    def __init__(self, root: tk.Tk, run_callback: Callable) -> None:
         self.root = root
+        self.run_callback = run_callback
         root.title("ECG Viewer Launcher")
 
         # Variables 
@@ -383,39 +382,44 @@ class ECGGuiApp:
             messagebox.showerror("Invalid file", "Please select a .txt or .csv file.")
             return
 
-        argv: List[str] = [file_path]
-
         # Window length
         try:
-            float(self.window_var.get().strip())
+            window_val = float(self.window_var.get().strip())
         except ValueError:
             messagebox.showerror("Invalid window", "Window length must be numeric.")
             return
-        argv += ["--window", self.window_var.get().strip()]
 
         # Y limits
         ymin = self.ymin_var.get().strip()
         ymax = self.ymax_var.get().strip()
 
+        ylim: Optional[Tuple[float, float]] = None
         if ymin or ymax:
             if not (ymin and ymax):
                 messagebox.showerror("Invalid Y-limits", "Provide both Min and Max values.")
                 return
             try:
-                float(ymin)
-                float(ymax)
+                ymin_f = float(ymin)
+                ymax_f = float(ymax)
             except ValueError:
                 messagebox.showerror("Invalid Y-limits", "Y-limits must be numbers.")
                 return
-            argv += ["--ylim", ymin, ymax]
+            ylim = (ymin_f, ymax_f)
 
-        # Artefact visualisation flag
-        # Implement handling of --hide-artifacts in ecg_main.main / viewer code.
-        if not self.show_artifacts_var.get():
-            argv.append("--hide-artifacts")
+        hide_artifacts = not self.show_artifacts_var.get()
 
+        # Close the launcher and run the actual viewer
         self.root.destroy()
-        ecg_main.main(argv)
+
+        # Call into main.run_ecg_viewer(...)
+        self.run_callback(
+            file_path,
+            window=window_val,
+            ylim=ylim,
+            hide_artifacts=hide_artifacts,
+            bandpass=False,  # or add a checkbox if you want GUI control
+        )
+
 
 
 def main() -> None:
