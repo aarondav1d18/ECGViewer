@@ -57,7 +57,7 @@ jobs:
           pip install --upgrade pip
           pip install --no-cache-dir -r requirements.txt
 
-      # Configure CMake in the plotter directory (mirrors: mkdir build && cd build && cmake ..)
+      # Configure CMake in the ECGViewer directory (mirrors: mkdir build && cd build && cmake ..)
       - name: Configure C++ project
         working-directory: ECGViewer
         run: |

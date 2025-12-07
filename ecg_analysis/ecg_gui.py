@@ -7,9 +7,6 @@ from tkinter import ttk
 from typing import List, Optional, Tuple, Callable
 
 
-# -------------------------------------------------------------------- #
-# Small tooltip helper
-# -------------------------------------------------------------------- #
 class ToolTip:
     def __init__(self, widget: tk.Widget, text: str, delay: int = 500) -> None:
         self.widget = widget
@@ -112,16 +109,13 @@ class ToolTip:
             self._tip_window = None
 
 
-# -------------------------------------------------------------------- #
-# GUI Application
-# -------------------------------------------------------------------- #
 class ECGGuiApp:
     def __init__(self, root: tk.Tk, run_callback: Callable) -> None:
         self.root = root
         self.run_callback = run_callback
         root.title("ECG Viewer Launcher")
 
-        # ---- Variables ----
+        # Variables 
         self.file_var = tk.StringVar()
         self.window_var = tk.StringVar(value="0.4")
         self.ymin_var = tk.StringVar()
@@ -129,7 +123,7 @@ class ECGGuiApp:
         self.show_artifacts_var = tk.BooleanVar(value=True)  # NEW: artefact toggle
         self.status_var = tk.StringVar(value="Select an ECG file and click Run.")
 
-        # ---- Root layout ----
+        # Root layout 
         root.minsize(580, 420)
         root.columnconfigure(0, weight=1)
         root.rowconfigure(0, weight=1)
@@ -147,7 +141,7 @@ class ECGGuiApp:
 
         self._build_menu()
 
-        # ---- Header ----
+        # Header 
         header = ttk.Label(
             main_frame,
             text="ECG Viewer",
@@ -162,7 +156,7 @@ class ECGGuiApp:
         )
         subheader.grid(row=1, column=0, sticky="w", pady=(0, 8))
 
-        # ---- File selection ----
+        # File selection 
         file_frame = ttk.LabelFrame(main_frame, text="Input ECG file")
         file_frame.grid(row=2, column=0, sticky="ew", pady=(0, 8))
         file_frame.columnconfigure(1, weight=1)
@@ -174,7 +168,7 @@ class ECGGuiApp:
         browse_btn.grid(row=0, column=2, sticky="e", padx=6, pady=6)
         ToolTip(browse_btn, "Choose a .txt ECG file from disk.")
 
-        # ---- Viewer settings ----
+        # Viewer settings 
         basic_frame = ttk.LabelFrame(main_frame, text="Viewer settings")
         basic_frame.grid(row=3, column=0, sticky="ew", pady=(0, 8))
         basic_frame.columnconfigure(1, weight=1)
@@ -197,7 +191,6 @@ class ECGGuiApp:
         ymax_entry = ttk.Entry(basic_frame, textvariable=self.ymax_var, width=8)
         ymax_entry.grid(row=1, column=2, sticky="w", padx=(35, 2))
 
-        # NEW: artefact visualisation option
         show_art_chk = ttk.Checkbutton(
             basic_frame,
             text="Show original ECG with artefacts",
@@ -210,7 +203,7 @@ class ECGGuiApp:
             "If unticked, only the visually corrected (clean) ECG is shown."
         )
 
-        # ---- Help box (improved appearance) ----
+        # Help box 
         help_frame = ttk.LabelFrame(main_frame, text="How to use the ECG viewer")
         help_frame.grid(row=4, column=0, sticky="nsew", pady=(0, 8))
         help_frame.columnconfigure(0, weight=1)
@@ -243,25 +236,49 @@ class ECGGuiApp:
 
         help_text.tag_configure("heading", font=("TkDefaultFont", 9, "bold"))
         help_text.tag_configure("indent", lmargin1=16, lmargin2=24)
+
         help_text.insert("end", "Inputs\n", ("heading",))
-        help_text.insert("end", "– In this current version the ECG viewer only accepts .txt files.\n", ("indent",))
+        help_text.insert("end", "– In this version the ECG viewer only accepts .txt files.\n\n", ("indent",))
+
         help_text.insert("end", "Navigation\n", ("heading",))
         help_text.insert("end", "– Move through the ECG using the slider at the bottom.\n", ("indent",))
         help_text.insert("end", "– The Left and Right buttons also move through the recording.\n", ("indent",))
         help_text.insert("end", "– You can use the keyboard: Left/A = move left, Right/D = move right.\n", ("indent",))
-        help_text.insert("end", "– Dragging the ECG left/right works, but may show blank space (will be improved).\n\n", ("indent",))
+        help_text.insert("end", "– You can click and drag the ECG left/right to traverse the recording.\n\n", ("indent",))
 
         help_text.insert("end", "Zooming\n", ("heading",))
-        help_text.insert("end", "– Use the mouse wheel to zoom in and out.\n", ("indent",))
-        help_text.insert("end", "– Zoom buttons change how much of the ECG you see at once.\n", ("indent",))
+        help_text.insert("end", "– Use the mouse wheel to zoom in and out on the time axis.\n", ("indent",))
+        help_text.insert("end", "– The Zoom In and Zoom Out buttons change how much of the ECG you see at once.\n", ("indent",))
         help_text.insert("end", "– Rect Zoom lets you draw a box around an area to zoom into.\n\n", ("indent",))
 
         help_text.insert("end", "Viewing\n", ("heading",))
-        help_text.insert("end", "– Reset View returns everything to a normal, clear layout.\n", ("indent",))
-        help_text.insert("end", "– Coloured markers show the P, Q, R, S and T points automatically.\n\n", ("indent",))
+        help_text.insert("end", "– Reset View returns the time window and y-axis to a normal, clear layout.\n", ("indent",))
+        help_text.insert("end", "– The viewer shows a cleaned version of the ECG signal by default.\n", ("indent",))
+        help_text.insert("end", "– You can choose to show or hide the original ECG with artefacts.\n\n", ("indent",))
+
+        help_text.insert("end", "Key Points (P, Q, R, S, T)\n", ("heading",))
+        help_text.insert("end", "– Coloured markers show the P, Q, R, S and T points on the ECG trace.\n", ("indent",))
+        help_text.insert("end", "– Each P/Q/R/S/T point is shown as a coloured dot on the line and a vertical line with a label (e.g. R @ 1.23456s).\n", ("indent",))
+        help_text.insert("end", "– The QRS detections are displayed as vertical lines with labels at the time they occur.\n", ("indent",))
+        help_text.insert("end", "– P and T wave detection is not perfect and may show false positives or miss some waves.\n", ("indent",))
+        help_text.insert("end", "– When you hover over a key point, the cursor changes to a hand. You can click and drag to move the point left/right in time.\n", ("indent",))
+        help_text.insert("end", "– While hovering a key point, you can press Backspace or Delete to remove it.\n", ("indent",))
+        help_text.insert("end", "– At the bottom of the viewer there are tabs:\n", ("indent",))
+        help_text.insert("end", "   • The “Traversal” tab contains the movement, zoom and Notes… controls.\n", ("indent",))
+        help_text.insert("end", "   • The “Manual keypoints” tab lets you add new P, Q, R, S or T points.\n", ("indent",))
+        help_text.insert("end", "– When you add a new key point from the Manual keypoints tab, it is placed in the middle of the current window and can then be dragged to the desired location.\n\n", ("indent",))
+
+        help_text.insert("end", "Notes\n", ("heading",))
+        help_text.insert("end", "– Click the “Notes…” button on the Traversal tab to open the Notes Manager.\n", ("indent",))
+        help_text.insert("end", "– In the Notes Manager you can create, edit and delete notes linked to specific times in the ECG.\n", ("indent",))
+        help_text.insert("end", "– New notes are created at the centre of the current ECG window and can be moved by dragging their marker on the plot.\n", ("indent",))
+        help_text.insert("end", "– Notes appear on the ECG as a vertical marker with a text label. You can drag these in the same way as key points.\n", ("indent",))
+        help_text.insert("end", "– Double-clicking a note in the Notes Manager (or on the plot) will jump the view to that time and open a dialog where you can edit the tag, time, voltage and detailed text.\n", ("indent",))
+        help_text.insert("end", "– You can save notes to a JSON file and load them again later. Saved note files use the .json extension.\n\n", ("indent",))
 
         help_text.insert("end", "Exit\n", ("heading",))
         help_text.insert("end", "– Click Exit when you're finished.\n\n", ("indent",))
+
 
         help_text.insert(
             "end",
@@ -270,7 +287,7 @@ class ECGGuiApp:
 
         help_text.configure(state="disabled")
 
-        # ---- Bottom bar ----
+        # Bottom bar 
         bottom_frame = ttk.Frame(main_frame)
         bottom_frame.grid(row=5, column=0, sticky="ew")
         bottom_frame.columnconfigure(0, weight=1)
@@ -298,7 +315,7 @@ class ECGGuiApp:
 
         ttk.Button(btn_frame, text="Close", command=root.destroy).grid(row=0, column=1)
 
-        # ---- Bindings ----
+        # Bindings 
         self.file_entry.focus_set()
         self.file_var.trace_add("write", self._on_file_change)
         root.bind("<Return>", lambda e: self.run_viewer())
@@ -307,9 +324,6 @@ class ECGGuiApp:
         root.update_idletasks()
         self._center_window()
 
-    # ------------------------------------------------------------------ #
-    # Menu
-    # ------------------------------------------------------------------ #
     def _build_menu(self) -> None:
         menubar = tk.Menu(self.root)
 
@@ -331,7 +345,6 @@ class ECGGuiApp:
             "A simple launcher for the ECG Qt viewer."
         )
 
-    # ------------------------------------------------------------------ #
     def _center_window(self) -> None:
         self.root.update_idletasks()
         w = self.root.winfo_width()
@@ -350,9 +363,6 @@ class ECGGuiApp:
             self.run_button.config(state="disabled")
             self.status_var.set("Select an ECG file.")
 
-    # ------------------------------------------------------------------ #
-    # Callbacks
-    # ------------------------------------------------------------------ #
     def browse_file(self) -> None:
         path = filedialog.askopenfilename(
             title="Select ECG text file",
@@ -412,7 +422,6 @@ class ECGGuiApp:
 
 
 
-# -------------------------------------------------------------------- #
 def main() -> None:
     root = tk.Tk()
     ECGGuiApp(root)
