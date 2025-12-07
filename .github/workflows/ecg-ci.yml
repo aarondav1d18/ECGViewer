@@ -66,18 +66,18 @@ jobs:
           cmake .. -DCMAKE_BUILD_TYPE=Release
 
       - name: Build C++ project
-        working-directory: plotter/build
+        working-directory: ECGViewer/build
         run: |
           make -j"$(nproc)"
 
       # - name: Run tests
-      #   working-directory: plotter/build
+      #   working-directory: ECGViewer/build
       #   run: ctest --output-on-failure
 
       - name: Package C++ build outputs
         run: |
-          # Package everything in plotter/build as a tarball
-          tar czf cpp-build-artifacts.tar.gz -C plotter/build .
+          # Package everything in ECGViewer/build as a tarball
+          tar czf cpp-build-artifacts.tar.gz -C ECGViewer/build .
 
       - name: Upload C++ package artifact
         uses: actions/upload-artifact@v4
