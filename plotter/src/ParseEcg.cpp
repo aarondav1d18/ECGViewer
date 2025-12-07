@@ -100,7 +100,7 @@ EcgData parse_ecg_file_cpp(const std::string &path) {
         throw std::runtime_error("Could not open ECG file: " + path);
     }
 
-    // Optional: give the file stream a larger buffer (1 MB)
+    // give the file stream a larger buffer (1 MB)
     static constexpr std::size_t BUF_SIZE = 1 << 20;
     std::vector<char> filebuf(BUF_SIZE);
     f.rdbuf()->pubsetbuf(filebuf.data(), static_cast<std::streamsize>(filebuf.size()));

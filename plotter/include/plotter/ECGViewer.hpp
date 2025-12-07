@@ -24,9 +24,9 @@ namespace ECGViewer {
 
 struct Note
 {
-    QString tag;      // easier with Qt widgets
-    QString detail;   // free-text detail
-    double time = 0;  // seconds (relative, like fiducials)
+    QString tag; // easier with Qt widgets
+    QString detail; // free-text detail
+    double time = 0; // seconds (relative, like fiducials)
     double volts = 0; // optional; can be y-value at note time
 };
 
@@ -70,6 +70,9 @@ private:
     void updateNoteItems(double x0, double x1);
     void openNoteEditor(int noteIndex);
     void deleteHoveredNote();
+    void refreshNotesList(); // rebuilds the list from notes_
+    void applyNotesFilter(); // filters by search text
+    int  noteIndexFromItem(QListWidgetItem* item) const;
 
     QVector<double> t_;
     QVector<double> vOrig_;
@@ -91,7 +94,7 @@ private:
     bool zoomRectMode_ = false;
     bool blockWindowUpdates_ = false;
     double currentX0{0.0}, currentX1{0.0};
-    int hoverFiducialIndex_ = -1;   // index into fiducialsCurrent_ for hover, -1 = none
+    int hoverFiducialIndex_ = -1; // index into fiducialsCurrent_ for hover, -1 = none
 
 
     double total_time_;
@@ -104,13 +107,13 @@ private:
     struct FiducialVisual
     {
         FiducialType type;
-        int index;                // index into pTimes_/qTimes_/...
+        int index; // index into pTimes_/qTimes_/...
         QCPItemLine* line = nullptr;
         QCPItemText* text = nullptr;
     };
     struct NoteVisual
     {
-        int noteIndex = -1;       // index into notes_
+        int noteIndex = -1; // index into notes_
         QCPItemLine* line = nullptr;
         QCPItemText* text = nullptr;
     };
@@ -119,12 +122,12 @@ private:
 
     bool draggingFiducial_ = false;
     int  activeFiducialIndex_ = -1;
-    double dragOffsetSeconds_ = 0.0;            // click offset from fiducial x
+    double dragOffsetSeconds_ = 0.0; // click offset from fiducial x
 
-    QVector<Note> notes_;                  // all notes (time, tag, detail, volts)
-    QVector<NoteVisual> notesCurrent_;     // only notes visible in current window
+    QVector<Note> notes_; // all notes (time, tag, detail, volts)
+    QVector<NoteVisual> notesCurrent_; // only notes visible in current window
 
-    int hoverNoteIndex_ = -1;              // index into notesCurrent_, -1 = none
+    int hoverNoteIndex_ = -1; // index into notesCurrent_, -1 = none
     bool draggingNote_ = false;
     int  activeNoteVisualIndex_ = -1;
     double noteDragOffsetSeconds_ = 0.0;
@@ -178,6 +181,7 @@ private:
     QPushButton* manualInsertButton_ = nullptr;
     QListWidget* notesListWidget_ = nullptr;
     QLineEdit* notesSearchEdit_ = nullptr;
+    QPushButton* btnNotesDialog_ = nullptr;
 
 
 
@@ -201,7 +205,12 @@ private slots:
     void onInsertManualFiducial();
     void onPlotMouseDoubleClick(QMouseEvent* event);
     void onNewNote();
-
+    void onSaveNotes();
+    void onLoadNotes();
+    void onDeleteNoteFromList();
+    void onNotesListItemDoubleClicked(QListWidgetItem* item);
+    void onNotesSearchTextChanged(const QString& text);
+    void onShowNotesDialog();
 
 };
 } // namespace ECGViewer

@@ -148,7 +148,7 @@ void ECGViewer::onPlotMouseMove(QMouseEvent* event)
 
         n.time = newTime;
 
-        double yLow  = plot_->yAxis->range().lower;
+        double yLow = plot_->yAxis->range().lower;
         double yHigh = plot_->yAxis->range().upper;
 
         nv.line->start->setCoords(newTime, yLow);
@@ -283,7 +283,6 @@ void ECGViewer::onPlotMouseRelease(QMouseEvent* event)
     if (f.index >= 0 && f.index < times.size()) {
         times[f.index] = newTime;
 
-        // Optional: snap Y to underlying clean signal at the nearest sample
         double absTime = t_.first() + newTime; // because we used tRel = t[i] - t0
         int sampleIndex = static_cast<int>(std::round((absTime - t_.first()) * fs_));
         if (sampleIndex < 0)
@@ -335,7 +334,6 @@ void ECGViewer::keyPressEvent(QKeyEvent* event) {
         else
             deleteHoveredFiducial();
         break;
-
 
     default:
         QMainWindow::keyPressEvent(event);

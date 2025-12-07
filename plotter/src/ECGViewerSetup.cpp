@@ -9,6 +9,13 @@
 #include <QComboBox>
 #include <QPen>
 #include <QBrush>
+#include <QListWidget>
+#include <QLineEdit>
+#include <QFileDialog>
+#include <QJsonDocument>
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QFile>
 
 
 namespace ECGViewer {
@@ -156,6 +163,7 @@ ECGViewer::ECGViewer(const QVector<double>& t,
 
     // Tabs at the bottom: Traversal + Manual Insert
     tabWidget_ = new QTabWidget(central);
+    tabWidget_->setTabPosition(QTabWidget::South);
 
     // Traversal tab (existing controls)
     QWidget* traversalTab = new QWidget(tabWidget_);
@@ -168,6 +176,7 @@ ECGViewer::ECGViewer(const QVector<double>& t,
     btnResetView_ = new QPushButton("Reset View", traversalTab);
     btnExit_ = new QPushButton("Exit", traversalTab);
     btnZoomRect_ = new QPushButton("Rect Zoom", traversalTab);
+    btnNotesDialog_ = new QPushButton("Notes…", traversalTab);
     btnZoomRect_->setCheckable(true);
 
     slider_ = new QSlider(Qt::Horizontal, traversalTab);
@@ -182,10 +191,12 @@ ECGViewer::ECGViewer(const QVector<double>& t,
     traversalLayout->addWidget(btnResetView_);
     traversalLayout->addWidget(btnExit_);
     traversalLayout->addWidget(btnZoomRect_);
+    traversalLayout->addWidget(btnNotesDialog_);
     traversalLayout->addWidget(slider_);
 
     traversalTab->setLayout(traversalLayout);
     tabWidget_->addTab(traversalTab, "Traversal");
+    vbox->addWidget(tabWidget_);
 
     // Manual insert tab
     QWidget* manualTab = new QWidget(tabWidget_);
@@ -208,33 +219,6 @@ ECGViewer::ECGViewer(const QVector<double>& t,
 
     manualTab->setLayout(manualLayout);
     tabWidget_->addTab(manualTab, "Manual keypoints");
-
-    QWidget* notes = new QWidget(tabWidget_);
-    auto* notesLayout = new QHBoxLayout(notes);
-
-    // add a list widget to show existing notes
-    // maybe a text edit for note content
-    // could be a whole new class for notes management
-    // maybe jump to note time in plot when clicking on note
-    // etc etc
-    // for now just a placeholder label
-    btnNewNote_ = new QPushButton("New Note", notes);
-    btnSaveNotes_ = new QPushButton("Save Notes", notes);
-    btnLoadNotes_ = new QPushButton("Load Notes", notes);
-    btnDeleteNote_ = new QPushButton("Delete Note", notes);
-
-    notesLayout->addWidget(btnNewNote_);
-    notesLayout->addWidget(btnSaveNotes_);
-    notesLayout->addWidget(btnLoadNotes_);
-    notesLayout->addWidget(btnDeleteNote_);
-    notesLayout->addStretch(1);
-
-    notes->setLayout(notesLayout);
-    tabWidget_->addTab(notes, "Notes");
-
-    // Add the tab widget to bottom of main layout
-    vbox->addWidget(tabWidget_);
-
 
     setCentralWidget(central);
     setWindowTitle("ECG Viewer (Qt)");
@@ -344,15 +328,16 @@ ECGViewer::ECGViewer(const QVector<double>& t,
             this, [this]() {
                 close();
             });
-    connect(btnNewNote_, &QPushButton::clicked,
-            this, &ECGViewer::onNewNote);
 
     // double-click on plot to open note editor if note under cursor
     connect(plot_, &QCustomPlot::mouseDoubleClick,
             this, &ECGViewer::onPlotMouseDoubleClick);
 
+    connect(btnNotesDialog_, &QPushButton::clicked,
+            this, &ECGViewer::onShowNotesDialog);
 
     // Initial window
+    refreshNotesList();
     updateWindow(0);
 }
 } // namespace ECGViewer

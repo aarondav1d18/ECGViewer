@@ -237,34 +237,49 @@ class ECGGuiApp:
 
         help_text.tag_configure("heading", font=("TkDefaultFont", 9, "bold"))
         help_text.tag_configure("indent", lmargin1=16, lmargin2=24)
+
         help_text.insert("end", "Inputs\n", ("heading",))
-        help_text.insert("end", "– In this current version the ECG viewer only accepts .txt files.\n", ("indent",))
+        help_text.insert("end", "– In this version the ECG viewer only accepts .txt files.\n\n", ("indent",))
+
         help_text.insert("end", "Navigation\n", ("heading",))
         help_text.insert("end", "– Move through the ECG using the slider at the bottom.\n", ("indent",))
         help_text.insert("end", "– The Left and Right buttons also move through the recording.\n", ("indent",))
         help_text.insert("end", "– You can use the keyboard: Left/A = move left, Right/D = move right.\n", ("indent",))
-        help_text.insert("end", "– Dragging the ECG left/right will traverse the ECG like other methods.\n\n", ("indent",))
+        help_text.insert("end", "– You can click and drag the ECG left/right to traverse the recording.\n\n", ("indent",))
 
         help_text.insert("end", "Zooming\n", ("heading",))
-        help_text.insert("end", "– Use the mouse wheel to zoom in and out.\n", ("indent",))
-        help_text.insert("end", "– Zoom buttons change how much of the ECG you see at once.\n", ("indent",))
+        help_text.insert("end", "– Use the mouse wheel to zoom in and out on the time axis.\n", ("indent",))
+        help_text.insert("end", "– The Zoom In and Zoom Out buttons change how much of the ECG you see at once.\n", ("indent",))
         help_text.insert("end", "– Rect Zoom lets you draw a box around an area to zoom into.\n\n", ("indent",))
 
         help_text.insert("end", "Viewing\n", ("heading",))
-        help_text.insert("end", "– Reset View returns everything to a normal, clear layout.\n", ("indent",))
-        help_text.insert("end", "– Coloured markers show the P, Q, R, S and T points automatically.\n\n", ("indent",))
+        help_text.insert("end", "– Reset View returns the time window and y-axis to a normal, clear layout.\n", ("indent",))
+        help_text.insert("end", "– The viewer shows a cleaned version of the ECG signal by default.\n", ("indent",))
+        help_text.insert("end", "– You can choose to show or hide the original ECG with artefacts.\n\n", ("indent",))
 
-        help_text.insert("end", "Key Points\n", ("heading",))
-        help_text.insert("end", "– The ECG viewer shows a cleaned version of the ECG signal.\n", ("indent",))
-        help_text.insert("end", "– Artefact markers indicate noisy/corrupted sections of the ECG.\n", ("indent",))
-        help_text.insert("end", "– You can choose to show/hide the original ECG with artefacts.\n", ("indent",))
-        help_text.insert("end", "The QRS will be displayed on the graph with a verticle line and a label of either QR or S with the time it happens at.\n", ("indent",))
-        help_text.insert("end", "The P and T wave detection is not quite correct yet and may show fasle positives or not pick up on some waves.\n", ("indent",))
-        help_text.insert("end", "- Each of the P, Q, R, S and T points are marked with a coloured dot on the ECG line and can be manually moved by clicking and dragging on them.\n", ("indent",))
-        help_text.insert("end", "- There are tabs on the bottom tool bar in the ECG Viewer. From this you can select the movement tab or the addition tab. The addition tab will allow you to add either a T,Q,R,S,P key point into the ECG. This will be placed in the middle of the plot and you can then move this to the desired location.\n", ("indent",))
-        help_text.insert("end", "- When hovering over each key point your cursor will change to a hand symbol. From this you can either click and hold to move the point or if you press the backspace key or delete key on your keyboard you can delete this point from the ecg.\n\n", ("indent",))
+        help_text.insert("end", "Key Points (P, Q, R, S, T)\n", ("heading",))
+        help_text.insert("end", "– Coloured markers show the P, Q, R, S and T points on the ECG trace.\n", ("indent",))
+        help_text.insert("end", "– Each P/Q/R/S/T point is shown as a coloured dot on the line and a vertical line with a label (e.g. R @ 1.23456s).\n", ("indent",))
+        help_text.insert("end", "– The QRS detections are displayed as vertical lines with labels at the time they occur.\n", ("indent",))
+        help_text.insert("end", "– P and T wave detection is not perfect and may show false positives or miss some waves.\n", ("indent",))
+        help_text.insert("end", "– When you hover over a key point, the cursor changes to a hand. You can click and drag to move the point left/right in time.\n", ("indent",))
+        help_text.insert("end", "– While hovering a key point, you can press Backspace or Delete to remove it.\n", ("indent",))
+        help_text.insert("end", "– At the bottom of the viewer there are tabs:\n", ("indent",))
+        help_text.insert("end", "   • The “Traversal” tab contains the movement, zoom and Notes… controls.\n", ("indent",))
+        help_text.insert("end", "   • The “Manual keypoints” tab lets you add new P, Q, R, S or T points.\n", ("indent",))
+        help_text.insert("end", "– When you add a new key point from the Manual keypoints tab, it is placed in the middle of the current window and can then be dragged to the desired location.\n\n", ("indent",))
+
+        help_text.insert("end", "Notes\n", ("heading",))
+        help_text.insert("end", "– Click the “Notes…” button on the Traversal tab to open the Notes Manager.\n", ("indent",))
+        help_text.insert("end", "– In the Notes Manager you can create, edit and delete notes linked to specific times in the ECG.\n", ("indent",))
+        help_text.insert("end", "– New notes are created at the centre of the current ECG window and can be moved by dragging their marker on the plot.\n", ("indent",))
+        help_text.insert("end", "– Notes appear on the ECG as a vertical marker with a text label. You can drag these in the same way as key points.\n", ("indent",))
+        help_text.insert("end", "– Double-clicking a note in the Notes Manager (or on the plot) will jump the view to that time and open a dialog where you can edit the tag, time, voltage and detailed text.\n", ("indent",))
+        help_text.insert("end", "– You can save notes to a JSON file and load them again later. Saved note files use the .json extension.\n\n", ("indent",))
+
         help_text.insert("end", "Exit\n", ("heading",))
         help_text.insert("end", "– Click Exit when you're finished.\n\n", ("indent",))
+
 
         help_text.insert(
             "end",
