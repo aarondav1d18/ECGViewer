@@ -307,7 +307,7 @@ static py::tuple parse_ecg_file_py(const std::string &path) {
     return py::make_tuple(t_arr, v_arr, fs_obj, meta);
 }
 
-PYBIND11_MODULE(parse_ecg, m) {
+PYBIND11_MODULE(parseECG, m) {
     m.doc() = "ECG text file parser (C++ implementation)";
     m.def("parse_ecg_file", &parse_ecg_file_py,
           py::arg("path"),

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(ecg_qt_viewer_project LANGUAGES CXX)
+project(ECGViewer_project LANGUAGES CXX)
 
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
@@ -14,30 +14,30 @@ find_package(pybind11 REQUIRED)
 
 find_package(Qt5 COMPONENTS Core Widgets PrintSupport REQUIRED)
 
-set(ECG_QT_VIEWER_SOURCES
+set(ECG_VIEWER_SOURCES
     src/EcgQtViewer.cpp
     src/EcgQtModule.cpp
     src/qcustomplot.cpp
     include/plotter/qcustomplot.h
 )
 
-pybind11_add_module(ecg_qt_viewer
-    ${ECG_QT_VIEWER_SOURCES}
+pybind11_add_module(ECGViewer
+    ${ECG_VIEWER_SOURCES}
 )
 
-target_include_directories(ecg_qt_viewer
+target_include_directories(ECGViewer
     PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include/plotter"
 )
 
-target_link_libraries(ecg_qt_viewer
+target_link_libraries(ECGViewer
     PRIVATE
         Qt5::Core
         Qt5::Widgets
         Qt5::PrintSupport
 )
 
-set_target_properties(ecg_qt_viewer PROPERTIES
+set_target_properties(ECGViewer PROPERTIES
     POSITION_INDEPENDENT_CODE ON
     LIBRARY_OUTPUT_DIRECTORY  "${CMAKE_CURRENT_SOURCE_DIR}/"
     RUNTIME_OUTPUT_DIRECTORY  "${CMAKE_CURRENT_SOURCE_DIR}/"
@@ -48,11 +48,11 @@ set(PARSE_ECG_SOURCES
     src/ParseEcg.cpp
 )
 
-pybind11_add_module(parse_ecg
+pybind11_add_module(parseECG
     ${PARSE_ECG_SOURCES}
 )
 
-set_target_properties(parse_ecg PROPERTIES
+set_target_properties(parseECG PROPERTIES
     POSITION_INDEPENDENT_CODE ON
     LIBRARY_OUTPUT_DIRECTORY  "${CMAKE_CURRENT_SOURCE_DIR}/"
     RUNTIME_OUTPUT_DIRECTORY  "${CMAKE_CURRENT_SOURCE_DIR}/"
@@ -64,11 +64,11 @@ set_target_properties(parse_ecg PROPERTIES
 # OR 
 #   make clean
 add_custom_target(clean-all
-    COMMAND ${CMAKE_COMMAND} -E rm -f "$<TARGET_FILE:ecg_qt_viewer>"
-    COMMAND ${CMAKE_COMMAND} -E rm -f "$<TARGET_FILE:parse_ecg>"
+    COMMAND ${CMAKE_COMMAND} -E rm -f "$<TARGET_FILE:ECGViewer>"
+    COMMAND ${CMAKE_COMMAND} -E rm -f "$<TARGET_FILE:parseECG>"
     COMMAND ${CMAKE_COMMAND} -E rm -f "${CMAKE_BINARY_DIR}/CMakeCache.txt"
     COMMAND ${CMAKE_COMMAND} -E rm -rf
         "${CMAKE_BINARY_DIR}/CMakeFiles"
-        "${CMAKE_BINARY_DIR}/ecg_qt_viewer_autogen"
-    COMMENT "Removing built ecg_qt_viewer & parse_ecg modules and CMake build files"
+        "${CMAKE_BINARY_DIR}/ECGViewer_autogen"
+    COMMENT "Removing built ECGViewer & parseECG modules and CMake build files"
 )

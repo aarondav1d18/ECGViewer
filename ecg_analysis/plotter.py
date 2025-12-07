@@ -7,12 +7,12 @@ from typing import Optional, Tuple, List
 import numpy as np
 
 
-from utils import (  # or from .utils if used as a package
+from ecg_analysis import (  # or from .utils if used as a package
     detect_artifacts,
     clean_with_noise,
     detect_fiducials,
 )
-from ecg_qt_viewer import show_ecg_viewer  # C++/Qt pybind module
+from ECGViewer import show_ecg_viewer
 
 
 @dataclass
