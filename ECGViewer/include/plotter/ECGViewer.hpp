@@ -206,6 +206,7 @@ private slots:
     void onPlotMouseRelease(QMouseEvent* event);
     void onInsertManualFiducial();
     void onPlotMouseDoubleClick(QMouseEvent* event);
+    void updatePoint(FiducialVisual& f, double newTime);
     void onNewNote();
     void onSaveNotes(const bool guiSave = false);
     void onLoadNotes();

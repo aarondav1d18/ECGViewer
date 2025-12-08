@@ -200,6 +200,13 @@ void ECGViewer::onPlotMouseMove(QMouseEvent* event)
         // Keep closed hand while dragging
         setCursor(Qt::ClosedHandCursor);
 
+        updatePoint(f, newTime);
+        // Refresh scatter graphs so points move too
+        graphP_->setData(pTimes_, pVals_);
+        graphQ_->setData(qTimes_, qVals_);
+        graphR_->setData(rTimes_, rVals_);
+        graphS_->setData(sTimes_, sVals_);
+        graphT_->setData(tTimes_, tVals_);
         plot_->replot(QCustomPlot::rpQueuedReplot);
         return;
     }
@@ -248,7 +255,24 @@ void ECGViewer::onPlotMouseMove(QMouseEvent* event)
     }
 }
 
+void ECGViewer::updatePoint(FiducialVisual& f, double newTime) {
+    // Update underlying time & value vectors
+    QVector<double>& times = timesFor(f.type);
+    QVector<double>& vals = valsFor(f.type);
 
+    if (f.index >= 0 && f.index < times.size()) {
+        times[f.index] = newTime;
+
+        double absTime = t_.first() + newTime; // because we used tRel = t[i] - t0
+        int sampleIndex = static_cast<int>(std::round((absTime - t_.first()) * fs_));
+        if (sampleIndex < 0)
+            sampleIndex = 0;
+        if (sampleIndex >= vClean_.size())
+            sampleIndex = vClean_.size() - 1;
+
+        vals[f.index] = vClean_[sampleIndex];
+    }
+}
 
 void ECGViewer::onPlotMouseRelease(QMouseEvent* event)
 {
@@ -273,25 +297,7 @@ void ECGViewer::onPlotMouseRelease(QMouseEvent* event)
 
     auto& f = fiducialsCurrent_[activeFiducialIndex_];
 
-    // Final x position from the line item
-    double newTime = f.line->start->coords().x();
-
-    // Update underlying time & value vectors
-    QVector<double>& times = timesFor(f.type);
-    QVector<double>& vals = valsFor(f.type);
-
-    if (f.index >= 0 && f.index < times.size()) {
-        times[f.index] = newTime;
-
-        double absTime = t_.first() + newTime; // because we used tRel = t[i] - t0
-        int sampleIndex = static_cast<int>(std::round((absTime - t_.first()) * fs_));
-        if (sampleIndex < 0)
-            sampleIndex = 0;
-        if (sampleIndex >= vClean_.size())
-            sampleIndex = vClean_.size() - 1;
-
-        vals[f.index] = vClean_[sampleIndex];
-    }
+    updatePoint(f, f.line->start->coords().x());
 
     // Refresh scatter graphs so points move too
     graphP_->setData(pTimes_, pVals_);

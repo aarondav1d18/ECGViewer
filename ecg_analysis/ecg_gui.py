@@ -203,7 +203,7 @@ class ECGGuiApp:
             "If unticked, only the visually corrected (clean) ECG is shown."
         )
 
-        # Help box 
+                # Help box 
         help_frame = ttk.LabelFrame(main_frame, text="How to use the ECG viewer")
         help_frame.grid(row=4, column=0, sticky="nsew", pady=(0, 8))
         help_frame.columnconfigure(0, weight=1)
@@ -217,7 +217,7 @@ class ECGGuiApp:
 
         card_bg = "#f7f7f7"
 
-        help_text = tk.Text(
+        self.help_text = tk.Text(
             help_inner,
             wrap="word",
             borderwidth=1,
@@ -228,64 +228,20 @@ class ECGGuiApp:
             background=card_bg,
             font=("TkDefaultFont", 9),
         )
-        help_text.grid(row=0, column=0, sticky="nsew")
+        self.help_text.grid(row=0, column=0, sticky="nsew")
 
-        scroll = ttk.Scrollbar(help_inner, orient="vertical", command=help_text.yview)
+        scroll = ttk.Scrollbar(help_inner, orient="vertical", command=self.help_text.yview)
         scroll.grid(row=0, column=1, sticky="ns")
-        help_text.configure(yscrollcommand=scroll.set)
+        self.help_text.configure(yscrollcommand=scroll.set)
 
-        help_text.tag_configure("heading", font=("TkDefaultFont", 9, "bold"))
-        help_text.tag_configure("indent", lmargin1=16, lmargin2=24)
+        self.help_text.tag_configure("heading", font=("TkDefaultFont", 9, "bold"))
+        self.help_text.tag_configure("indent", lmargin1=16, lmargin2=24)
 
-        help_text.insert("end", "Inputs\n", ("heading",))
-        help_text.insert("end", "– In this version the ECG viewer only accepts .txt files.\n\n", ("indent",))
+        # Fill the help box
+        self._populate_help_text()
 
-        help_text.insert("end", "Navigation\n", ("heading",))
-        help_text.insert("end", "– Move through the ECG using the slider at the bottom.\n", ("indent",))
-        help_text.insert("end", "– The Left and Right buttons also move through the recording.\n", ("indent",))
-        help_text.insert("end", "– You can use the keyboard: Left/A = move left, Right/D = move right.\n", ("indent",))
-        help_text.insert("end", "– You can click and drag the ECG left/right to traverse the recording.\n\n", ("indent",))
+        self.help_text.configure(state="disabled")
 
-        help_text.insert("end", "Zooming\n", ("heading",))
-        help_text.insert("end", "– Use the mouse wheel to zoom in and out on the time axis.\n", ("indent",))
-        help_text.insert("end", "– The Zoom In and Zoom Out buttons change how much of the ECG you see at once.\n", ("indent",))
-        help_text.insert("end", "– Rect Zoom lets you draw a box around an area to zoom into.\n\n", ("indent",))
-
-        help_text.insert("end", "Viewing\n", ("heading",))
-        help_text.insert("end", "– Reset View returns the time window and y-axis to a normal, clear layout.\n", ("indent",))
-        help_text.insert("end", "– The viewer shows a cleaned version of the ECG signal by default.\n", ("indent",))
-        help_text.insert("end", "– You can choose to show or hide the original ECG with artefacts.\n\n", ("indent",))
-
-        help_text.insert("end", "Key Points (P, Q, R, S, T)\n", ("heading",))
-        help_text.insert("end", "– Coloured markers show the P, Q, R, S and T points on the ECG trace.\n", ("indent",))
-        help_text.insert("end", "– Each P/Q/R/S/T point is shown as a coloured dot on the line and a vertical line with a label (e.g. R @ 1.23456s).\n", ("indent",))
-        help_text.insert("end", "– The QRS detections are displayed as vertical lines with labels at the time they occur.\n", ("indent",))
-        help_text.insert("end", "– P and T wave detection is not perfect and may show false positives or miss some waves.\n", ("indent",))
-        help_text.insert("end", "– When you hover over a key point, the cursor changes to a hand. You can click and drag to move the point left/right in time.\n", ("indent",))
-        help_text.insert("end", "– While hovering a key point, you can press Backspace or Delete to remove it.\n", ("indent",))
-        help_text.insert("end", "– At the bottom of the viewer there are tabs:\n", ("indent",))
-        help_text.insert("end", "   • The “Traversal” tab contains the movement, zoom and Notes… controls.\n", ("indent",))
-        help_text.insert("end", "   • The “Manual keypoints” tab lets you add new P, Q, R, S or T points.\n", ("indent",))
-        help_text.insert("end", "– When you add a new key point from the Manual keypoints tab, it is placed in the middle of the current window and can then be dragged to the desired location.\n\n", ("indent",))
-
-        help_text.insert("end", "Notes\n", ("heading",))
-        help_text.insert("end", "– Click the “Notes…” button on the Traversal tab to open the Notes Manager.\n", ("indent",))
-        help_text.insert("end", "– In the Notes Manager you can create, edit and delete notes linked to specific times in the ECG.\n", ("indent",))
-        help_text.insert("end", "– New notes are created at the centre of the current ECG window and can be moved by dragging their marker on the plot.\n", ("indent",))
-        help_text.insert("end", "– Notes appear on the ECG as a vertical marker with a text label. You can drag these in the same way as key points.\n", ("indent",))
-        help_text.insert("end", "– Double-clicking a note in the Notes Manager (or on the plot) will jump the view to that time and open a dialog where you can edit the tag, time, voltage and detailed text.\n", ("indent",))
-        help_text.insert("end", "– You can save notes to a JSON file and load them again later. Saved note files use the .json extension.\n\n", ("indent",))
-
-        help_text.insert("end", "Exit\n", ("heading",))
-        help_text.insert("end", "– Click Exit when you're finished.\n\n", ("indent",))
-
-
-        help_text.insert(
-            "end",
-            "Tip: If the view becomes confusing, press Reset View.\n"
-        )
-
-        help_text.configure(state="disabled")
 
         # Bottom bar 
         bottom_frame = ttk.Frame(main_frame)
@@ -323,6 +279,92 @@ class ECGGuiApp:
 
         root.update_idletasks()
         self._center_window()
+    
+    def _add_help_section(self, title: str, bullets: list[str]) -> None:
+        """Insert a section with a heading and a list of bullet points."""
+        self.help_text.insert("end", f"{title}\n", ("heading",))
+        for line in bullets:
+            self.help_text.insert("end", f"– {line}\n", ("indent",))
+        self.help_text.insert("end", "\n")
+
+    def _populate_help_text(self) -> None:
+        ht = self.help_text
+
+        self._add_help_section(
+            "Inputs",
+            [
+                "In this version the ECG viewer only accepts .txt files.",
+            ],
+        )
+
+        self._add_help_section(
+            "Navigation",
+            [
+                "Move through the ECG using the slider at the bottom.",
+                "The Left and Right buttons also move through the recording.",
+                "You can use the keyboard: Left/A = move left, Right/D = move right.",
+                "You can click and drag the ECG left/right to traverse the recording.",
+            ],
+        )
+
+        self._add_help_section(
+            "Zooming",
+            [
+                "Use the mouse wheel to zoom in and out on the time axis.",
+                "The Zoom In and Zoom Out buttons change how much of the ECG you see at once.",
+                "Rect Zoom lets you draw a box around an area to zoom into.",
+            ],
+        )
+
+        self._add_help_section(
+            "Viewing",
+            [
+                "Reset View returns the time window and y-axis to a normal, clear layout.",
+                "The viewer shows a cleaned version of the ECG signal by default.",
+                "You can choose to show or hide the original ECG with artefacts.",
+            ],
+        )
+
+        self._add_help_section(
+            "Key Points (P, Q, R, S, T)",
+            [
+                "Coloured markers show the P, Q, R, S and T points on the ECG trace.",
+                "Each P/Q/R/S/T point is shown as a coloured dot on the line and a vertical line "
+                "with a label (e.g. R @ 1.23456s).",
+                "The QRS detections are displayed as vertical lines with labels at the time they occur.",
+                "P and T wave detection is not perfect and may show false positives or miss some waves.",
+                "When you hover over a key point, the cursor changes to a hand. You can click and drag "
+                "to move the point left/right in time.",
+                "While hovering a key point, you can press Backspace or Delete to remove it.",
+                "At the bottom of the viewer there are tabs:",
+                "   • The “Traversal” tab contains the movement, zoom and Notes… controls.",
+                "   • The “Manual keypoints” tab lets you add new P, Q, R, S or T points.",
+                "When you add a new key point from the Manual keypoints tab, it is placed in the middle "
+                "of the current window and can then be dragged to the desired location.",
+            ],
+        )
+
+        self._add_help_section(
+            "Notes",
+            [
+                "Click the “Notes…” button on the Traversal tab to open the Notes Manager.",
+                "In the Notes Manager you can create, edit and delete notes linked to specific times in the ECG.",
+                "New notes are created at the centre of the current ECG window and can be moved by dragging "
+                "their marker on the plot.",
+                "Notes appear on the ECG as a vertical marker with a text label. You can drag these in the same "
+                "way as key points.",
+                "Double-clicking a note in the Notes Manager (or on the plot) will jump the view to that time "
+                "and open a dialog where you can edit the tag, time, voltage and detailed text.",
+                "You can save notes to a JSON file and load them again later. Saved note files use the .json extension.",
+            ],
+        )
+
+        ht.insert(
+            "end",
+            "Tip: If the view becomes confusing, press Reset View.\n",
+        )
+
+
 
     def _build_menu(self) -> None:
         menubar = tk.Menu(self.root)
@@ -419,14 +461,3 @@ class ECGGuiApp:
             hide_artifacts=hide_artifacts,
             bandpass=False,  # or add a checkbox if you want GUI control
         )
-
-
-
-def main() -> None:
-    root = tk.Tk()
-    ECGGuiApp(root)
-    root.mainloop()
-
-
-if __name__ == "__main__":
-    main()
