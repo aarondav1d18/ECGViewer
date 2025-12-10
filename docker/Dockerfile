@@ -37,9 +37,14 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 
-COPY plotter/ .
+COPY ECGViewer/ /app/ECGViewer 
+COPY main.py /app
+COPY ecg_analysis /app/ecg_analysis
+COPY data/ /app/data
 
-RUN mkdir -p build
-RUN cd build && cmake ../ && make
-CMD ["python", "ecg_gui.py"]
+WORKDIR /app/ECGViewer/
+RUN bash build.bash --clean
+RUN bash build.bash
+WORKDIR /app
+CMD ["python", "main.py"]
 
