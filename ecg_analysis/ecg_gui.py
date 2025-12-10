@@ -1,463 +1,637 @@
-#!/usr/bin/env python3
 from __future__ import annotations
 
-import tkinter as tk
-from tkinter import filedialog, messagebox
-from tkinter import ttk
-from typing import List, Optional, Tuple, Callable
+import os
+from typing import Callable, Optional, Tuple
+from .worker import ECGWorker, ECGJobConfig  # or wherever you put it
+from ecg_analysis import ViewerConfig, ECGViewer
+from PyQt5.QtCore import Qt, QThread, QFileInfo
+from PyQt5.QtWidgets import (
+    QCheckBox,
+    QDoubleSpinBox,
+    QFormLayout,
+    QFrame,
+    QGridLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
+    QMessageBox,
+    QPushButton,
+    QSizePolicy,
+    QStatusBar,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+    QFileDialog,
+    QSpacerItem,
+    QApplication,
+    QProgressDialog
+)
 
 
-class ToolTip:
-    def __init__(self, widget: tk.Widget, text: str, delay: int = 500) -> None:
-        self.widget = widget
-        self.text = text
-        self.delay = delay
-        self._after_id: str | None = None
-        self._tip_window: tk.Toplevel | None = None
+class ECGQtLauncher(QMainWindow):
+    """
+    Qt-based launcher that replaces the old Tk ECGGuiApp.
 
-        widget.bind("<Enter>", self._on_enter)
-        widget.bind("<Leave>", self._on_leave)
-        widget.bind("<ButtonPress>", self._on_leave)
+    Collects:
+      - file_path (.txt / .csv)
+      - window length
+      - optional y-limits
+      - show/hide original ECG with artefacts
 
-    def _on_enter(self, _event: tk.Event) -> None:
-        self._schedule_show()
+    Does NOT run the pipeline itself. main.py reads .result and calls run_ecg_viewer.
+    """
 
-    def _on_leave(self, _event: tk.Event) -> None:
-        self._cancel_show()
-        self._hide_tip()
-
-    def _schedule_show(self) -> None:
-        self._cancel_show()
-        self._after_id = self.widget.after(self.delay, self._show_tip)
-
-    def _cancel_show(self) -> None:
-        if self._after_id is not None:
-            self.widget.after_cancel(self._after_id)
-            self._after_id = None
-
-    def _show_tip(self) -> None:
-        if self._tip_window is not None:
-            return
-
-        # Default tooltip position (right + below widget)
-        x = self.widget.winfo_rootx() + 20
-        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 4
-
-        # Get tooltip size (estimate first)
-        est_width = 260
-        est_height = 60
-
-        # Get root window boundaries
-        root = self.widget.winfo_toplevel()
-        root_x = root.winfo_rootx()
-        root_y = root.winfo_rooty()
-        root_w = root.winfo_width()
-        root_h = root.winfo_height()
-
-        # Clamp X so tooltip stays inside the window
-        if x + est_width > root_x + root_w:
-            x = (root_x + root_w) - est_width - 8
-        if x < root_x:
-            x = root_x + 8
-
-        # Clamp Y so tooltip stays inside the window
-        if y + est_height > root_y + root_h:
-            y = self.widget.winfo_rooty() - est_height - 8
-        if y < root_y:
-            y = root_y + 8
-
-        # Create tooltip window
-        self._tip_window = tw = tk.Toplevel(self.widget)
-        tw.wm_overrideredirect(True)
-        tw.wm_geometry(f"+{int(x)}+{int(y)}")
-
-        label = ttk.Label(
-            tw,
-            text=self.text,
-            background="#ffffe0",
-            relief="solid",
-            borderwidth=1,
-            padding=(6, 3, 6, 3),
-            wraplength=280,
-        )
-        label.pack()
-
-        # Now that it's created, get its *actual* size and clamp again
-        tw.update_idletasks()
-        w = tw.winfo_width()
-        h = tw.winfo_height()
-
-        # Re-adjust if needed
-        adj_x = x
-        adj_y = y
-
-        if adj_x + w > root_x + root_w:
-            adj_x = (root_x + root_w) - w - 8
-        if adj_x < root_x:
-            adj_x = root_x + 8
-
-        if adj_y + h > root_y + root_h:
-            adj_y = self.widget.winfo_rooty() - h - 8
-        if adj_y < root_y:
-            adj_y = root_y + 8
-
-        tw.wm_geometry(f"+{int(adj_x)}+{int(adj_y)}")
-
-    def _hide_tip(self) -> None:
-        if self._tip_window is not None:
-            self._tip_window.destroy()
-            self._tip_window = None
-
-
-class ECGGuiApp:
-    def __init__(self, root: tk.Tk, run_callback: Callable) -> None:
-        self.root = root
+    def __init__(self, run_callback: Callable,  parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._current_thread = None  # to keep a reference
         self.run_callback = run_callback
-        root.title("ECG Viewer Launcher")
+        self.setWindowTitle("ECG Viewer Launcher")
+        self.resize(940, 560)
 
-        # Variables 
-        self.file_var = tk.StringVar()
-        self.window_var = tk.StringVar(value="0.4")
-        self.ymin_var = tk.StringVar()
-        self.ymax_var = tk.StringVar()
-        self.show_artifacts_var = tk.BooleanVar(value=True)  # NEW: artefact toggle
-        self.status_var = tk.StringVar(value="Select an ECG file and click Run.")
+        self._accepted: bool = False
+        self._result: dict | None = None
 
-        # Root layout 
-        root.minsize(580, 420)
-        root.columnconfigure(0, weight=1)
-        root.rowconfigure(0, weight=1)
+        central = QWidget(self)
+        self.setCentralWidget(central)
 
-        main_frame = ttk.Frame(root, padding=12)
-        main_frame.grid(row=0, column=0, sticky="nsew")
-        main_frame.columnconfigure(0, weight=1)
-        main_frame.rowconfigure(4, weight=1)  # help box expands
+        root_layout = QGridLayout(central)
+        root_layout.setContentsMargins(16, 16, 12, 8)
+        root_layout.setHorizontalSpacing(18)
+        root_layout.setVerticalSpacing(10)
 
-        style = ttk.Style(root)
-        try:
-            style.theme_use("clam")
-        except tk.TclError:
-            pass
+        # ------------------------------------------------------------------ #
+        # LEFT: header + settings card + buttons
+        # ------------------------------------------------------------------ #
+        left_layout = QVBoxLayout()
+        left_layout.setSpacing(12)
 
-        self._build_menu()
+        # Header
+        header_box = QVBoxLayout()
+        title = QLabel("ECG Viewer")
+        t_font = title.font()
+        t_font.setPointSize(t_font.pointSize() + 6)
+        t_font.setBold(True)
+        title.setFont(t_font)
 
-        # Header 
-        header = ttk.Label(
-            main_frame,
-            text="ECG Viewer",
-            font=("TkDefaultFont", 14, "bold"),
-        )
-        header.grid(row=0, column=0, sticky="w")
+        subtitle = QLabel("Load a local ECG recording and configure how it is displayed.")
+        subtitle.setStyleSheet("color: #666666;")
 
-        subheader = ttk.Label(
-            main_frame,
-            text="Choose an ECG file and configure the viewer settings below.",
-            foreground="gray40",
-        )
-        subheader.grid(row=1, column=0, sticky="w", pady=(0, 8))
+        header_box.addWidget(title)
+        header_box.addWidget(subtitle)
+        header_box.addSpacing(2)
 
-        # File selection 
-        file_frame = ttk.LabelFrame(main_frame, text="Input ECG file")
-        file_frame.grid(row=2, column=0, sticky="ew", pady=(0, 8))
-        file_frame.columnconfigure(1, weight=1)
+        left_layout.addLayout(header_box)
 
-        ttk.Label(file_frame, text="File:").grid(row=0, column=0, sticky="w", padx=6, pady=6)
-        self.file_entry = ttk.Entry(file_frame, textvariable=self.file_var)
-        self.file_entry.grid(row=0, column=1, sticky="ew", padx=(0, 6), pady=6)
-        browse_btn = ttk.Button(file_frame, text="Browse…", command=self.browse_file)
-        browse_btn.grid(row=0, column=2, sticky="e", padx=6, pady=6)
-        ToolTip(browse_btn, "Choose a .txt ECG file from disk.")
+        # Settings "card"
+        card = QFrame(central)
+        card.setObjectName("card")
+        card.setFrameShape(QFrame.NoFrame)
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(14, 14, 14, 14)
+        card_layout.setSpacing(12)
 
-        # Viewer settings 
-        basic_frame = ttk.LabelFrame(main_frame, text="Viewer settings")
-        basic_frame.grid(row=3, column=0, sticky="ew", pady=(0, 8))
-        basic_frame.columnconfigure(1, weight=1)
+        # File selection group
+        file_group = QGroupBox("Input ECG file", card)
+        file_group_layout = QVBoxLayout(file_group)
+        file_group_layout.setContentsMargins(10, 8, 10, 8)
+        file_group_layout.setSpacing(6)
 
-        ttk.Label(basic_frame, text="Window length (s):").grid(
-            row=0, column=0, sticky="w", padx=6, pady=(6, 2)
-        )
-        win_entry = ttk.Entry(basic_frame, textvariable=self.window_var, width=10)
-        win_entry.grid(row=0, column=1, sticky="w", padx=(0, 6), pady=(6, 2))
-        ToolTip(win_entry, "How many seconds of ECG to display at once.")
+        file_row = QHBoxLayout()
+        file_row.setSpacing(6)
 
-        ttk.Label(basic_frame, text="Y-limits (optional):").grid(
-            row=1, column=0, sticky="w", padx=6
-        )
+        file_label = QLabel("File:")
+        self.file_edit = QLineEdit(file_group)
+        self.file_edit.setPlaceholderText("Select a .txt or .csv ECG file...")
+        browse_btn = QPushButton("Browse…", file_group)
 
-        ttk.Label(basic_frame, text="Min:").grid(row=1, column=1, sticky="w", padx=(0, 4))
-        ymin_entry = ttk.Entry(basic_frame, textvariable=self.ymin_var, width=8)
-        ymin_entry.grid(row=1, column=1, sticky="w", padx=(35, 2))
-        ttk.Label(basic_frame, text="Max:").grid(row=1, column=2, sticky="w", padx=(0, 4))
-        ymax_entry = ttk.Entry(basic_frame, textvariable=self.ymax_var, width=8)
-        ymax_entry.grid(row=1, column=2, sticky="w", padx=(35, 2))
+        file_row.addWidget(file_label)
+        file_row.addWidget(self.file_edit, 1)
+        file_row.addWidget(browse_btn)
 
-        show_art_chk = ttk.Checkbutton(
-            basic_frame,
-            text="Show original ECG with artefacts",
-            variable=self.show_artifacts_var,
-        )
-        show_art_chk.grid(row=2, column=0, columnspan=4, sticky="w", padx=6, pady=(6, 4))
-        ToolTip(
-            show_art_chk,
-            "If ticked, the viewer shows the original noisy ECG together with the cleaned signal.\n"
-            "If unticked, only the visually corrected (clean) ECG is shown."
-        )
+        file_group_layout.addLayout(file_row)
 
-                # Help box 
-        help_frame = ttk.LabelFrame(main_frame, text="How to use the ECG viewer")
-        help_frame.grid(row=4, column=0, sticky="nsew", pady=(0, 8))
-        help_frame.columnconfigure(0, weight=1)
-        help_frame.rowconfigure(0, weight=1)
+        # Tiny helper under file input
+        self.file_hint = QLabel("Only text or CSV ECG exports are supported.")
+        self.file_hint.setStyleSheet("color: #888888; font-size: 10px;")
+        file_group_layout.addWidget(self.file_hint)
 
-        # inner card-like frame
-        help_inner = ttk.Frame(help_frame)
-        help_inner.grid(row=0, column=0, sticky="nsew", padx=4, pady=4)
-        help_inner.columnconfigure(0, weight=1)
-        help_inner.rowconfigure(0, weight=1)
+        # Label that shows just the base name nicely
+        self.file_name_label = QLabel("")
+        self.file_name_label.setStyleSheet("color: #555555; font-style: italic; font-size: 10px;")
+        file_group_layout.addWidget(self.file_name_label)
 
-        card_bg = "#f7f7f7"
+        card_layout.addWidget(file_group)
 
-        self.help_text = tk.Text(
-            help_inner,
-            wrap="word",
-            borderwidth=1,
-            relief="solid",
-            highlightthickness=0,
-            padx=10,
-            pady=8,
-            background=card_bg,
-            font=("TkDefaultFont", 9),
-        )
-        self.help_text.grid(row=0, column=0, sticky="nsew")
+        # Viewer settings group
+        settings_group = QGroupBox("Viewer settings", card)
+        settings_layout = QFormLayout(settings_group)
+        settings_layout.setContentsMargins(10, 8, 10, 10)
+        settings_layout.setSpacing(6)
+        settings_layout.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
-        scroll = ttk.Scrollbar(help_inner, orient="vertical", command=self.help_text.yview)
-        scroll.grid(row=0, column=1, sticky="ns")
-        self.help_text.configure(yscrollcommand=scroll.set)
+        # Window length
+        window_row = QHBoxLayout()
+        self.window_spin = QDoubleSpinBox(settings_group)
+        self.window_spin.setRange(0.05, 10_000.0)
+        self.window_spin.setDecimals(3)
+        self.window_spin.setValue(0.4)
+        self.window_spin.setSingleStep(0.1)
+        self.window_spin.setSuffix("  s")
+        window_row.addWidget(self.window_spin)
+        window_row.addStretch(1)
 
-        self.help_text.tag_configure("heading", font=("TkDefaultFont", 9, "bold"))
-        self.help_text.tag_configure("indent", lmargin1=16, lmargin2=24)
+        settings_layout.addRow("Window length:", window_row)
 
-        # Fill the help box
+        window_hint = QLabel("Typical values are 0.3–1.0 s for detailed inspection.")
+        window_hint.setStyleSheet("color: #888888; font-size: 10px; margin-left: 2px;")
+        settings_layout.addRow("", window_hint)
+
+        # Y-limits
+        y_widget = QWidget(settings_group)
+        y_layout = QHBoxLayout(y_widget)
+        y_layout.setContentsMargins(0, 0, 0, 0)
+        y_layout.setSpacing(6)
+
+        self.ymin_edit = QLineEdit(y_widget)
+        self.ymin_edit.setPlaceholderText("Min (optional)")
+        self.ymax_edit = QLineEdit(y_widget)
+        self.ymax_edit.setPlaceholderText("Max (optional)")
+        self.ymin_edit.setMaximumWidth(120)
+        self.ymax_edit.setMaximumWidth(120)
+
+        y_layout.addWidget(self.ymin_edit)
+        y_layout.addWidget(self.ymax_edit)
+        y_layout.addStretch(1)
+
+        settings_layout.addRow("Y-limits:", y_widget)
+
+        y_hint = QLabel("Leave blank for automatic scaling; if used, provide both Min and Max.")
+        y_hint.setStyleSheet("color: #888888; font-size: 10px; margin-left: 2px;")
+        settings_layout.addRow("", y_hint)
+
+        # Show original ECG with artefacts
+        self.show_artifacts_check = QCheckBox("Show original ECG with artefacts", settings_group)
+        self.show_artifacts_check.setChecked(True)
+        settings_layout.addRow("", self.show_artifacts_check)
+
+        card_layout.addWidget(settings_group)
+        card_layout.addStretch(1)
+
+        left_layout.addWidget(card)
+
+        # Bottom buttons
+        button_row = QHBoxLayout()
+        button_row.setSpacing(8)
+        button_row.addStretch(1)
+
+        self.run_button = QPushButton("Run viewer")
+        self.run_button.setDefault(True)
+        self.run_button.setEnabled(False)
+        self.run_button.setObjectName("primaryButton")
+        self.run_button.setToolTip("Run the ECG viewer with the selected file and settings.")
+
+        close_button = QPushButton("Close")
+        close_button.setToolTip("Close the launcher without opening the viewer.")
+
+        button_row.addWidget(self.run_button)
+        button_row.addWidget(close_button)
+
+        left_layout.addLayout(button_row)
+
+        # ------------------------------------------------------------------ #
+        # RIGHT: help panel
+        # ------------------------------------------------------------------ #
+        right_layout = QVBoxLayout()
+        right_layout.setSpacing(8)
+
+        help_title = QLabel("How to use the ECG viewer")
+        h_font = help_title.font()
+        h_font.setBold(True)
+        help_title.setFont(h_font)
+
+        help_sub = QLabel("Short guide to navigation, zooming, keypoints and notes.")
+        help_sub.setStyleSheet("color: #666666;")
+
+        right_layout.addWidget(help_title)
+        right_layout.addWidget(help_sub)
+
+        help_frame = QFrame(central)
+        help_frame.setObjectName("helpCard")
+        help_frame.setFrameShape(QFrame.NoFrame)
+        help_layout = QVBoxLayout(help_frame)
+        help_layout.setContentsMargins(12, 10, 12, 10)
+        help_layout.setSpacing(6)
+
+        self.help_text = QTextEdit(help_frame)
+        self.help_text.setReadOnly(True)
+        self.help_text.setLineWrapMode(QTextEdit.WidgetWidth)
+        self.help_text.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+
+        help_layout.addWidget(self.help_text)
+        right_layout.addWidget(help_frame, 1)
+
+        # Put columns into grid
+        root_layout.addLayout(left_layout, 0, 0)
+        root_layout.addLayout(right_layout, 0, 1)
+        root_layout.setColumnStretch(0, 3)
+        root_layout.setColumnStretch(1, 4)
+
+        # Status bar
+        status = QStatusBar(self)
+        self.setStatusBar(status)
+        self.status_label = QLabel("Select an ECG file and click Run.")
+        status.addWidget(self.status_label)
+
+        # ------------------------------------------------------------------ #
+        # Signals & wiring
+        # ------------------------------------------------------------------ #
+        browse_btn.clicked.connect(self.on_browse_file)
+        self.file_edit.textChanged.connect(self.on_file_text_changed)
+        self.run_button.clicked.connect(self.on_run_clicked)
+        close_button.clicked.connect(self.close)
+        self.file_edit.returnPressed.connect(self.on_run_clicked)
+
+        # Keyboard shortcut: Ctrl+O to open file dialog
+        self.shortcut_open = self.file_edit.shortcut = self.file_edit
+        self.file_edit.setToolTip("Type a path or use Browse… (Ctrl+O) to select a file.")
+        self.file_edit.parent().installEventFilter(self)
+
+        # Fill help text and style
         self._populate_help_text()
+        self._center_on_screen()
+        self._apply_styles()
 
-        self.help_text.configure(state="disabled")
+        self._thread: QThread | None = None
+        self._worker: ECGWorker | None = None
+        self._progress: QProgressDialog | None = None
 
+    # ------------------------------------------------------------------ #
+    # Public API (used by main.py)
+    # ------------------------------------------------------------------ #
+    @property
+    def accepted(self) -> bool:
+        return self._accepted
 
-        # Bottom bar 
-        bottom_frame = ttk.Frame(main_frame)
-        bottom_frame.grid(row=5, column=0, sticky="ew")
-        bottom_frame.columnconfigure(0, weight=1)
+    @property
+    def result(self) -> Optional[dict]:
+        return self._result
 
-        status_label = ttk.Label(
-            bottom_frame,
-            textvariable=self.status_var,
-            foreground="gray40",
+    # ------------------------------------------------------------------ #
+    # Appearance helpers
+    # ------------------------------------------------------------------ #
+    def _apply_styles(self) -> None:
+        self.setStyleSheet(
+            """
+            QMainWindow {
+                background-color: #f4f5f7;
+            }
+            QLabel {
+                font-size: 11px;
+            }
+            QLineEdit, QDoubleSpinBox {
+                background: #ffffff;
+            }
+            #card, #helpCard {
+                background-color: #ffffff;
+                border-radius: 8px;
+                border: 1px solid #d0d0d0;
+            }
+            QGroupBox {
+                font-weight: bold;
+                border: none;
+                margin-top: 4px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 0px;
+                padding: 0px;
+            }
+            QPushButton {
+                padding: 6px 14px;
+                border-radius: 6px;
+                border: 1px solid #b0b0b0;
+                background-color: #ffffff;
+            }
+            QPushButton:hover {
+                background-color: #f0f0f0;
+            }
+            QPushButton:pressed {
+                background-color: #e0e0e0;
+            }
+            QPushButton#primaryButton, QPushButton:default {
+                background-color: #2f80ed;
+                color: #ffffff;
+                border: 1px solid #2f80ed;
+            }
+            QPushButton#primaryButton:hover, QPushButton:default:hover {
+                background-color: #2d74d3;
+            }
+            QPushButton#primaryButton:pressed {
+                background-color: #255fb2;
+            }
+            QStatusBar {
+                background-color: #ffffff;
+            }
+            """
         )
-        status_label.grid(row=0, column=0, sticky="w")
 
-        btn_frame = ttk.Frame(bottom_frame)
-        btn_frame.grid(row=0, column=1, sticky="e")
-
-        style.configure("Accent.TButton", padding=(8, 4))
-
-        self.run_button = ttk.Button(
-            btn_frame,
-            text="Run viewer",
-            style="Accent.TButton",
-            command=self.run_viewer,
-            state="disabled",
-        )
-        self.run_button.grid(row=0, column=0, padx=(0, 4))
-
-        ttk.Button(btn_frame, text="Close", command=root.destroy).grid(row=0, column=1)
-
-        # Bindings 
-        self.file_entry.focus_set()
-        self.file_var.trace_add("write", self._on_file_change)
-        root.bind("<Return>", lambda e: self.run_viewer())
-        root.bind("<Control-o>", lambda e: self.browse_file())
-
-        root.update_idletasks()
-        self._center_window()
-    
-    def _add_help_section(self, title: str, bullets: list[str]) -> None:
-        """Insert a section with a heading and a list of bullet points."""
-        self.help_text.insert("end", f"{title}\n", ("heading",))
-        for line in bullets:
-            self.help_text.insert("end", f"– {line}\n", ("indent",))
-        self.help_text.insert("end", "\n")
+    def _center_on_screen(self) -> None:
+        screen = self.screen()
+        if screen is None:
+            return
+        geo = self.frameGeometry()
+        center = screen.availableGeometry().center()
+        geo.moveCenter(center)
+        self.move(geo.topLeft())
 
     def _populate_help_text(self) -> None:
-        ht = self.help_text
+        def add_heading(title: str) -> None:
+            self.help_text.append(f"<b>{title}</b>")
 
-        self._add_help_section(
-            "Inputs",
-            [
-                "In this version the ECG viewer only accepts .txt files.",
-            ],
+        def add_bullets(lines: list[str]) -> None:
+            for line in lines:
+                self.help_text.append(f"– {line}")
+            self.help_text.append("")
+
+        self.help_text.clear()
+
+        add_heading("Inputs")
+        add_bullets([
+            "The viewer accepts ECG text/CSV exports from LabChart-style tools.",
+            "Use one channel per file for best results.",
+        ])
+
+        add_heading("Navigation")
+        add_bullets([
+            "Use the slider at the bottom of the viewer to move through the ECG.",
+            "Keyboard: Left/A = move left, Right/D = move right.",
+            "Click and drag the ECG left/right to scroll.",
+        ])
+
+        add_heading("Zooming")
+        add_bullets([
+            "Use the mouse wheel to zoom in and out on the time axis.",
+            "The Zoom In / Zoom Out buttons change how much ECG is visible.",
+            "Rect Zoom lets you drag a box around an area to zoom into it.",
+        ])
+
+        add_heading("Viewing")
+        add_bullets([
+            "Reset View restores a standard time window and y-axis range.",
+            "The cleaned ECG signal is shown by default.",
+            "You can choose to show or hide the original ECG with artefacts.",
+        ])
+
+        add_heading("Key Points (P, Q, R, S, T)")
+        add_bullets([
+            "Coloured markers show the P, Q, R, S and T points on the trace.",
+            "Markers can be dragged left/right; Delete/Backspace removes them.",
+            "Use the Manual keypoints tab in the viewer to add new points.",
+        ])
+
+        add_heading("Notes")
+        add_bullets([
+            "Click the Notes… button in the viewer to open the Notes Manager.",
+            "Notes are linked to specific times and appear as labelled markers.",
+            "Notes can be saved to JSON and loaded again for the same ECG file.",
+        ])
+
+        self.help_text.append(
+            "Tip: if the view becomes confusing, press Reset View in the viewer.\n"
         )
 
-        self._add_help_section(
-            "Navigation",
-            [
-                "Move through the ECG using the slider at the bottom.",
-                "The Left and Right buttons also move through the recording.",
-                "You can use the keyboard: Left/A = move left, Right/D = move right.",
-                "You can click and drag the ECG left/right to traverse the recording.",
-            ],
-        )
-
-        self._add_help_section(
-            "Zooming",
-            [
-                "Use the mouse wheel to zoom in and out on the time axis.",
-                "The Zoom In and Zoom Out buttons change how much of the ECG you see at once.",
-                "Rect Zoom lets you draw a box around an area to zoom into.",
-            ],
-        )
-
-        self._add_help_section(
-            "Viewing",
-            [
-                "Reset View returns the time window and y-axis to a normal, clear layout.",
-                "The viewer shows a cleaned version of the ECG signal by default.",
-                "You can choose to show or hide the original ECG with artefacts.",
-            ],
-        )
-
-        self._add_help_section(
-            "Key Points (P, Q, R, S, T)",
-            [
-                "Coloured markers show the P, Q, R, S and T points on the ECG trace.",
-                "Each P/Q/R/S/T point is shown as a coloured dot on the line and a vertical line "
-                "with a label (e.g. R @ 1.23456s).",
-                "The QRS detections are displayed as vertical lines with labels at the time they occur.",
-                "P and T wave detection is not perfect and may show false positives or miss some waves.",
-                "When you hover over a key point, the cursor changes to a hand. You can click and drag "
-                "to move the point left/right in time.",
-                "While hovering a key point, you can press Backspace or Delete to remove it.",
-                "At the bottom of the viewer there are tabs:",
-                "   • The “Traversal” tab contains the movement, zoom and Notes… controls.",
-                "   • The “Manual keypoints” tab lets you add new P, Q, R, S or T points.",
-                "When you add a new key point from the Manual keypoints tab, it is placed in the middle "
-                "of the current window and can then be dragged to the desired location.",
-            ],
-        )
-
-        self._add_help_section(
-            "Notes",
-            [
-                "Click the “Notes…” button on the Traversal tab to open the Notes Manager.",
-                "In the Notes Manager you can create, edit and delete notes linked to specific times in the ECG.",
-                "New notes are created at the centre of the current ECG window and can be moved by dragging "
-                "their marker on the plot.",
-                "Notes appear on the ECG as a vertical marker with a text label. You can drag these in the same "
-                "way as key points.",
-                "Double-clicking a note in the Notes Manager (or on the plot) will jump the view to that time "
-                "and open a dialog where you can edit the tag, time, voltage and detailed text.",
-                "You can save notes to a JSON file and load them again later. Saved note files use the .json extension.",
-            ],
-        )
-
-        ht.insert(
-            "end",
-            "Tip: If the view becomes confusing, press Reset View.\n",
-        )
-
-
-
-    def _build_menu(self) -> None:
-        menubar = tk.Menu(self.root)
-
-        file_menu = tk.Menu(menubar, tearoff=False)
-        file_menu.add_command(label="Open…", accelerator="Ctrl+O", command=self.browse_file)
-        file_menu.add_separator()
-        file_menu.add_command(label="Exit", command=self.root.destroy)
-        menubar.add_cascade(label="File", menu=file_menu)
-
-        help_menu = tk.Menu(menubar, tearoff=False)
-        help_menu.add_command(label="About", command=self._show_about)
-        menubar.add_cascade(label="Help", menu=help_menu)
-
-        self.root.config(menu=menubar)
-
-    def _show_about(self) -> None:
-        messagebox.showinfo(
-            "About ECG Viewer",
-            "A simple launcher for the ECG Qt viewer."
-        )
-
-    def _center_window(self) -> None:
-        self.root.update_idletasks()
-        w = self.root.winfo_width()
-        h = self.root.winfo_height()
-        sw = self.root.winfo_screenwidth()
-        sh = self.root.winfo_screenheight()
-        x = (sw - w) // 2
-        y = int((sh - h) * 0.4)
-        self.root.geometry(f"{w}x{h}+{x}+{y}")
-
-    def _on_file_change(self, *_args) -> None:
-        if self.file_var.get().strip():
-            self.run_button.config(state="normal")
-            self.status_var.set("Ready to run.")
-        else:
-            self.run_button.config(state="disabled")
-            self.status_var.set("Select an ECG file.")
-
-    def browse_file(self) -> None:
-        path = filedialog.askopenfilename(
-            title="Select ECG text file",
-            filetypes=[("Text files", "*.txt *.csv"), ("All files", "*.*")],
+    # ------------------------------------------------------------------ #
+    # Event handling / slots
+    # ------------------------------------------------------------------ #
+    def on_browse_file(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select ECG text file",
+            "",
+            "ECG files (*.txt *.csv);;All files (*)",
         )
         if path:
-            self.file_var.set(path)
+            self.file_edit.setText(path)
 
-    def run_viewer(self) -> None:
-        file_path = self.file_var.get().strip()
+    def on_file_text_changed(self, text: str) -> None:
+        text = text.strip()
+        # Update base name label for long paths
+        if text:
+            base = os.path.basename(text)
+            self.file_name_label.setText(f"Selected: {base}")
+        else:
+            self.file_name_label.setText("")
+
+        if text:
+            self.run_button.setEnabled(True)
+            self.status_label.setText("Ready to run.")
+        else:
+            self.run_button.setEnabled(False)
+            self.status_label.setText("Select an ECG file.")
+
+    def on_run_clicked(self) -> None:
+        file_path = self.file_edit.text().strip()
 
         if not file_path:
-            messagebox.showerror("Missing file", "Please select an ECG file.")
+            QMessageBox.critical(self, "Missing file", "Please select an ECG file.")
             return
 
-        if not file_path.lower().endswith((".txt", "csv")):
-            messagebox.showerror("Invalid file", "Please select a .txt or .csv file.")
+        ext = os.path.splitext(file_path)[1].lower()
+        if ext not in (".txt", ".csv"):
+            QMessageBox.critical(
+                self,
+                "Invalid file",
+                "Please select a .txt or .csv file.",
+            )
+            return
+
+        if not os.path.isfile(file_path):
+            QMessageBox.critical(self, "Missing file", "File does not exist on disk.")
             return
 
         # Window length
-        try:
-            window_val = float(self.window_var.get().strip())
-        except ValueError:
-            messagebox.showerror("Invalid window", "Window length must be numeric.")
-            return
+        window_val = float(self.window_spin.value())
 
         # Y limits
-        ymin = self.ymin_var.get().strip()
-        ymax = self.ymax_var.get().strip()
+        ymin_str = self.ymin_edit.text().strip()
+        ymax_str = self.ymax_edit.text().strip()
 
         ylim: Optional[Tuple[float, float]] = None
-        if ymin or ymax:
-            if not (ymin and ymax):
-                messagebox.showerror("Invalid Y-limits", "Provide both Min and Max values.")
+        if ymin_str or ymax_str:
+            if not (ymin_str and ymax_str):
+                QMessageBox.critical(
+                    self,
+                    "Invalid Y-limits",
+                    "Provide both Min and Max values.",
+                )
                 return
             try:
-                ymin_f = float(ymin)
-                ymax_f = float(ymax)
+                ymin = float(ymin_str)
+                ymax = float(ymax_str)
             except ValueError:
-                messagebox.showerror("Invalid Y-limits", "Y-limits must be numbers.")
+                QMessageBox.critical(
+                    self,
+                    "Invalid Y-limits",
+                    "Y-limits must be numbers.",
+                )
                 return
-            ylim = (ymin_f, ymax_f)
+            ylim = (ymin, ymax)
 
-        hide_artifacts = not self.show_artifacts_var.get()
+        show_artifacts = self.show_artifacts_check.isChecked()
+        hide_artifacts = not show_artifacts
 
-        # Close the launcher and run the actual viewer
-        self.root.destroy()
+        # If something is already running, don't spawn another
+        if self._thread is not None:
+            QMessageBox.warning(
+                self,
+                "Already processing",
+                "An ECG file is already being processed. Please wait.",
+            )
+            return
 
-        # Call into main.run_ecg_viewer(...)
-        self.run_callback(
-            file_path,
+        # --- build job config for worker ---
+        job = ECGJobConfig(
+            file_path=file_path,
             window=window_val,
             ylim=ylim,
             hide_artifacts=hide_artifacts,
-            bandpass=False,  # or add a checkbox if you want GUI control
+            bandpass=False,
         )
+
+        # --- UI busy state ---
+        self.status_label.setText("Processing ECG…")
+        self.run_button.setEnabled(False)
+        self.file_edit.setEnabled(False)
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+
+        # --- progress dialog ---
+        prog = QProgressDialog("Preparing ECG viewer…", "Cancel", 0, 100, self)
+        prog.setWindowTitle("Processing ECG")
+        prog.setWindowModality(Qt.WindowModal)
+        prog.setMinimumDuration(0)
+        prog.setAutoClose(False)
+        prog.setAutoReset(False)
+        prog.setValue(0)
+
+        self._progress = prog
+
+        # --- worker + thread setup ---
+        thread = QThread(self)
+        worker = ECGWorker(job)
+        worker.moveToThread(thread)
+
+        # connections: worker -> GUI
+        worker.progress.connect(self._on_worker_progress)
+        worker.error.connect(self._on_worker_error)
+        worker.finished.connect(self._on_worker_finished)
+
+        # thread lifecycle
+        worker.error.connect(thread.quit)
+        worker.finished.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(self._on_thread_finished)
+
+        # start signal
+        thread.started.connect(worker.run)
+
+        # cancel from dialog
+        prog.canceled.connect(self._on_progress_canceled)
+
+        # stash refs so we can cancel later
+        self._thread = thread
+        self._worker = worker
+
+        # go
+        thread.start()
+
+    def _on_thread_finished(self) -> None:
+        # Thread object is finished; clear pointer
+        self._thread = None
+        self._worker = None
+        QApplication.restoreOverrideCursor()
+        # progress dialog cleanup handled in finished/error handlers
+    
+    def _on_worker_progress(self, message: str, percent: int) -> None:
+        if self._progress is None:
+            return
+        self._progress.setLabelText(message)
+        self._progress.setValue(percent)
+        QApplication.processEvents()  # keep dialog responsive
+    
+    def _on_progress_canceled(self) -> None:
+        if self._worker is not None:
+            self._worker.request_cancel()
+        if self._progress is not None:
+            self._progress.setLabelText("Cancelling…")
+    
+    def _on_worker_error(self, msg: str) -> None:
+        self.status_label.setText("Error while processing ECG.")
+        self.run_button.setEnabled(True)
+        self.file_edit.setEnabled(True)
+
+        if self._progress is not None:
+            self._progress.reset()
+            self._progress.close()
+            self._progress = None
+
+        QApplication.restoreOverrideCursor()
+        QMessageBox.critical(self, "Error running viewer", msg)
+
+
+    def _on_worker_finished(self, result: dict) -> None:
+        # We are back in the GUI thread.
+        # Keep the progress dialog open while we build the viewer.
+
+        if self._progress is not None:
+            self._progress.setLabelText("Building ECG viewer…")
+            self._progress.setValue(70)
+            QApplication.processEvents()
+
+        # Reset some UI bits after we're done building everything
+        # but keep the busy cursor until the viewer is ready.
+        self.status_label.setText("Opening viewer…")
+        self.run_button.setEnabled(False)      # keep disabled until viewer ready
+        self.file_edit.setEnabled(False)
+
+        # Unpack the result from the worker
+        t = result["t"]
+        v = result["v"]
+        fs = result["fs"]
+        window = result["window"]
+        ylim = result["ylim"]
+        hide_artifacts = result["hide_artifacts"]
+        file_path = result["file_path"]
+
+        file_prefix = QFileInfo(file_path).baseName()
+
+        cfg = ViewerConfig(
+            window_s=window,
+            ylim=ylim,
+            hide_artifacts=hide_artifacts,
+        )
+
+        # This is where the heavy stuff still happens (inside ECGViewer.__init__)
+        # but now the progress dialog stays visible.
+        viewer = ECGViewer(t, v, fs, cfg, file_prefix=file_prefix)
+
+        # Give the user the feeling we actually finished
+        if self._progress is not None:
+            self._progress.setLabelText("Done.")
+            self._progress.setValue(100)
+            QApplication.processEvents()
+            self._progress.close()
+            self._progress = None
+
+        QApplication.restoreOverrideCursor()
+
+        # Re-enable UI (or close if you prefer one-shot)
+        self.run_button.setEnabled(True)
+        self.file_edit.setEnabled(True)
+
+        self.status_label.setText("Viewer opened.")
+        viewer.show()
+
+        # Optional: auto-close launcher after viewer opens
+        self.close()

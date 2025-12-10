@@ -5,9 +5,9 @@ from dataclasses import dataclass
 from typing import Optional, Tuple, List
 
 import numpy as np
+from PyQt5.QtWidgets import QApplication
 
-
-from ecg_analysis import (  # or from .utils if used as a package
+from ecg_analysis import ( 
     detect_artifacts,
     clean_with_noise,
     detect_fiducials,
@@ -19,9 +19,9 @@ from ECGViewer import show_ecg_viewer
 class ViewerConfig:
     window_s: float = 10.0
     ylim: Optional[Tuple[float, float]] = (-0.1, 0.15)
-    downsample_full: int = 50_000   # kept for API compatibility; not used here
-    downsample_window: int = 20_000 # kept for API compatibility; not used here
-    hide_artifacts: bool = False  # kept for API compatibility; not used here
+    downsample_full: int = 50_000   # TODO: Remove or implement
+    downsample_window: int = 20_000 # TODO: Remove or implement
+    hide_artifacts: bool = False  # TODO: Remove or implement
 
 
 class ECGViewer:
@@ -55,19 +55,31 @@ class ECGViewer:
         self.total_s = float(self.t[-1] - self.t[0])
         self.window_s = min(self.cfg.window_s, max(1.0, self.total_s))
 
-        # Units
         self.hide_artifacts = self.cfg.hide_artifacts
         self.v_plot = self.v_in
 
+        # This will keep Qt alive during processing. I had issues where I could not click
+        # "Cancel" in the progress dialog because the event loop as it was not being pumped.
+        app = QApplication.instance()
+
+        def pump():
+            if app is not None:
+                app.processEvents()
+
         # Artifacts and cleaned signal
         self.art_times = detect_artifacts(self.t, self.v_in, self.fs)
+        pump()
+
         self.v_clean = clean_with_noise(self.t, self.v_plot, self.art_times, self.fs)
+        pump()
 
         # Fiducials (beat features)
         self.beats = detect_fiducials(self.t, self.v_in, self.fs, art_times=self.art_times)
+        pump()
 
         # Precompute arrays for Qt viewer
         self.art_mask = self._build_artifact_mask()
+        pump()
         (
             self.P_times, self.P_vals,
             self.Q_times, self.Q_vals,
@@ -75,6 +87,7 @@ class ECGViewer:
             self.S_times, self.S_vals,
             self.T_times, self.T_vals,
         ) = self._beats_to_numpy_fiducials()
+        pump()
 
     # ------------------------------------------------------------------ #
     # Public API

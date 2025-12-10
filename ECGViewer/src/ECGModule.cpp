@@ -2,6 +2,7 @@
 #include <pybind11/numpy.h>
 
 #include <QApplication>
+#include <QtGlobal>
 #include "ECGViewer.hpp"
 
 namespace py = pybind11;
@@ -42,10 +43,12 @@ static void show_ecg_viewer(
     py::array_t<double> t_vals,
     const py::object& file_prefix)
 {
-    auto tq = toQVector1D<double>(t, "t");
-    auto vOrigQ = toQVector1D<double>(v_orig, "v_orig");
+    // --- Convert numpy → QVector and validate lengths ---
+
+    auto tq      = toQVector1D<double>(t,       "t");
+    auto vOrigQ  = toQVector1D<double>(v_orig,  "v_orig");
     auto vCleanQ = toQVector1D<double>(v_clean, "v_clean");
-    auto artQ = toQVector1D<unsigned char>(art_mask, "art_mask");
+    auto artQ    = toQVector1D<unsigned char>(art_mask, "art_mask");
 
     if (tq.size() != vOrigQ.size() ||
         tq.size() != vCleanQ.size() ||
@@ -65,17 +68,17 @@ static void show_ecg_viewer(
     }
 
     auto pTimesQ = toQVector1D<double>(p_times, "p_times");
-    auto pValsQ = toQVector1D<double>(p_vals, "p_vals");
+    auto pValsQ  = toQVector1D<double>(p_vals,  "p_vals");
     auto qTimesQ = toQVector1D<double>(q_times, "q_times");
-    auto qValsQ = toQVector1D<double>(q_vals, "q_vals");
+    auto qValsQ  = toQVector1D<double>(q_vals,  "q_vals");
     auto rTimesQ = toQVector1D<double>(r_times, "r_times");
-    auto rValsQ = toQVector1D<double>(r_vals, "r_vals");
+    auto rValsQ  = toQVector1D<double>(r_vals,  "r_vals");
     auto sTimesQ = toQVector1D<double>(s_times, "s_times");
-    auto sValsQ = toQVector1D<double>(s_vals, "s_vals");
+    auto sValsQ  = toQVector1D<double>(s_vals,  "s_vals");
     auto tTimesQ = toQVector1D<double>(t_times, "t_times");
-    auto tValsQ = toQVector1D<double>(t_vals, "t_vals");
+    auto tValsQ  = toQVector1D<double>(t_vals,  "t_vals");
+
     QString filePrefix;
-    //convert py::object to QString
     if (!file_prefix.is_none()) {
         filePrefix = QString::fromStdString(py::cast<std::string>(file_prefix));
     } else {
@@ -83,9 +86,15 @@ static void show_ecg_viewer(
     }
 
     // simple length checks: allow zero-length for "no points"
-    auto checkPair = [](const QVector<double>& a, const QVector<double>& b, const char* name) {
-        if (a.size() != b.size())
-            throw std::runtime_error(std::string("times/vals size mismatch for ") + name);
+    auto checkPair = [](const QVector<double>& a,
+                        const QVector<double>& b,
+                        const char* name)
+    {
+        if (a.size() != b.size()) {
+            throw std::runtime_error(
+                std::string("times/vals size mismatch for ") + name
+            );
+        }
     };
     checkPair(pTimesQ, pValsQ, "P");
     checkPair(qTimesQ, qValsQ, "Q");
@@ -93,11 +102,22 @@ static void show_ecg_viewer(
     checkPair(sTimesQ, sValsQ, "S");
     checkPair(tTimesQ, tValsQ, "T");
 
-    int argc = 0;
-    char* argv[] = {nullptr};
-    QApplication app(argc, argv);
+    // --- QApplication handling ---
+    // Reuse existing QApplication if present (Python-level Qt launcher),
+    // otherwise create our own and run its event loop.
 
-    ECGViewer::ECGViewer viewer(
+    QApplication* app = qobject_cast<QApplication*>(QApplication::instance());
+    bool created_app = false;
+
+    if (!app) {
+        int argc = 0;
+        char* argv[] = { nullptr };
+        app = new QApplication(argc, argv);
+        created_app = true;
+    }
+
+    // Allocate viewer on the heap so it outlives this function if needed
+    auto* viewer = new ECGViewer::ECGViewer(
         tq,
         vOrigQ,
         vCleanQ,
@@ -116,9 +136,17 @@ static void show_ecg_viewer(
         filePrefix
     );
 
-    viewer.show();
-    app.exec();
+    viewer->setAttribute(Qt::WA_DeleteOnClose);
+    viewer->show();
+
+    // If we created the QApplication here (standalone use), run its loop
+    if (created_app) {
+        app->exec();
+        // you *can* delete app here, but Qt will usually clean up on exit anyway
+        // delete app;
+    }
 }
+
 
 PYBIND11_MODULE(ECGViewer, m)
 {
