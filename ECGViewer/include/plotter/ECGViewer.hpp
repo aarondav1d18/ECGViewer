@@ -97,7 +97,7 @@ private:
     bool blockWindowUpdates_ = false;
     double currentX0{0.0}, currentX1{0.0};
     int hoverFiducialIndex_ = -1; // index into fiducialsCurrent_ for hover, -1 = none
-    const QString& filePrefix_;
+    QString filePrefix_;
 
 
     double total_time_;
