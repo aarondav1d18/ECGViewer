@@ -63,10 +63,6 @@ void ECGViewer::updateWindow(int startSample) {
             // This is the visual replacement for artefacted samples
             txNoise.push_back(tRel);
             vyNoise.push_back(vC);
-
-            // original-artifact-only:
-            // txOrigArt.push_back(tRel);
-            // vyOrigArt.push_back(vO);
         } else {
             // Cleaned signal on non-artifact samples
             txBase.push_back(tRel);

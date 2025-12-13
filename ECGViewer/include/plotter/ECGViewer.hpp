@@ -100,7 +100,9 @@ private:
     double currentX0{0.0}, currentX1{0.0};
     int hoverFiducialIndex_ = -1; // index into fiducialsCurrent_ for hover, -1 = none
     QString filePrefix_;
-
+    bool creatingRegion_ = false;
+    int  creatingNoteIndex_ = -1;
+    double regionAnchorTime_ = 0.0;
 
     double total_time_;
     double min_window_s_;
@@ -108,6 +110,15 @@ private:
     double window_s_original_;
     double y_min_orig_;
     double y_max_orig_;
+
+    enum class NoteDragMode { None, Move, ResizeLeft, ResizeRight, CreateRegion };
+
+    NoteDragMode noteDragMode_ = NoteDragMode::None;
+
+    // Used for resize/move math
+    double regionPressTime_ = 0.0;      // mouse-down time (x coord)
+    double originalStart_ = 0.0;
+    double originalEnd_ = 0.0;
 
     struct FiducialVisual
     {

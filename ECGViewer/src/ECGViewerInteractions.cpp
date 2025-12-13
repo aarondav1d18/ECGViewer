@@ -79,7 +79,113 @@ void ECGViewer::onPlotMousePress(QMouseEvent* event)
     if (zoomRectMode_) // don't drag labels while in rect zoom mode
         return;
 
+    const bool shiftHeld = (event->modifiers() & Qt::ShiftModifier) != 0;
+
+    // If shift is held and we're not clicking an existing selectable item,
+    // start drawing a region note.
     QCPAbstractItem* item = plot_->itemAt(event->pos(), true);
+    auto mouseTime = [this, event]() {
+        double x = plot_->xAxis->pixelToCoord(event->pos().x());
+        return std::clamp(x, 0.0, total_time_);
+    };
+    if (shiftHeld && item) {
+        for (int i = 0; i < notesCurrent_.size(); ++i) {
+            auto& nv = notesCurrent_[i];
+            if (!(nv.line == item || nv.text == item || nv.rect == item))
+                continue;
+
+            // Only regions are resizable
+            if (nv.noteIndex < 0 || nv.noteIndex >= notes_.size())
+                return;
+
+            Note& n = notes_[nv.noteIndex];
+            if (n.duration <= 0.0) {
+                // For point notes, Shift+click = edit (optional behavior)
+                openNoteEditor(nv.noteIndex);
+                return;
+            }
+
+            // Region note: decide resize-left / resize-right / move
+            const double t0 = n.time;
+            const double t1 = n.time + n.duration;
+
+            const int px = event->pos().x();
+            const int leftPx  = plot_->xAxis->coordToPixel(t0);
+            const int rightPx = plot_->xAxis->coordToPixel(t1);
+
+            const int edgeTolPx = 7; // tweak feel: 5-10 px
+
+            noteDragMode_ = NoteDragMode::Move;
+            if (std::abs(px - leftPx) <= edgeTolPx)
+                noteDragMode_ = NoteDragMode::ResizeLeft;
+            else if (std::abs(px - rightPx) <= edgeTolPx)
+                noteDragMode_ = NoteDragMode::ResizeRight;
+
+            draggingNote_ = true;
+            activeNoteVisualIndex_ = i;
+
+            regionPressTime_ = mouseTime();
+            originalStart_ = t0;
+            originalEnd_ = t1;
+
+            // For move mode, keep same offset behavior you already use
+            if (noteDragMode_ == NoteDragMode::Move) {
+                noteDragOffsetSeconds_ = n.time - plot_->xAxis->pixelToCoord(event->pos().x());
+            } else {
+                noteDragOffsetSeconds_ = 0.0;
+            }
+
+            savedInteractions_ = plot_->interactions();
+            plot_->setInteraction(QCP::iRangeDrag, false);
+            setCursor(Qt::SizeHorCursor); // horizontal resize-ish cursor
+            return;
+        }
+    }
+    if (shiftHeld && !item) {
+        double clickX = plot_->xAxis->pixelToCoord(event->pos().x());
+        clickX = std::clamp(clickX, 0.0, total_time_);
+
+        creatingRegion_ = true;
+        regionAnchorTime_ = clickX;
+
+        // Create a new region note (duration starts at 0)
+        Note n;
+        n.time = clickX;
+        const double eps = 1.0 / std::max(fs_, 1.0);
+        n.duration = eps; // NOT 0.0
+        n.tag = QStringLiteral("Region %1").arg(notes_.size() + 1);
+        n.detail = QString();
+
+        // volts optional: sample at start
+        {
+            double absTime = t_.first() + n.time;
+            int sampleIndex = static_cast<int>(std::round((absTime - t_.first()) * fs_));
+            sampleIndex = std::clamp(sampleIndex, 0, vClean_.size() - 1);
+            n.volts = vClean_[sampleIndex];
+        }
+
+        notes_.push_back(n);
+        creatingNoteIndex_ = notes_.size() - 1;
+
+        // Build visuals and find the visual index for this note
+        updateNoteItems(currentX0, currentX1);
+        for (int i = 0; i < notesCurrent_.size(); ++i) {
+            if (notesCurrent_[i].noteIndex == creatingNoteIndex_) {
+                activeNoteVisualIndex_ = i; // reuse this so we can update visuals in-place
+                break;
+            }
+        }
+
+        savedInteractions_ = plot_->interactions();
+        plot_->setInteraction(QCP::iRangeDrag, false);
+        setCursor(Qt::CrossCursor);
+
+        plot_->replot(QCustomPlot::rpQueuedReplot);
+        noteDragMode_ = NoteDragMode::CreateRegion;
+        return;
+    }
+
+
     if (!item)
         return;
 
@@ -89,6 +195,7 @@ void ECGViewer::onPlotMousePress(QMouseEvent* event)
         if (nv.line == item || nv.text == item || nv.rect == item) {
             draggingNote_ = true;
             activeNoteVisualIndex_ = i;
+            noteDragMode_ = NoteDragMode::Move;
 
             double clickX = plot_->xAxis->pixelToCoord(event->pos().x());
             const Note& note = notes_[nv.noteIndex];
@@ -124,8 +231,57 @@ void ECGViewer::onPlotMousePress(QMouseEvent* event)
 
 void ECGViewer::onPlotMouseMove(QMouseEvent* event)
 {
+    if (creatingRegion_ && creatingNoteIndex_ >= 0 && creatingNoteIndex_ < notes_.size())
+    {
+        Note& n = notes_[creatingNoteIndex_];
+
+        auto clampTime = [this](double x) { return std::clamp(x, 0.0, total_time_); };
+        double mouseX = clampTime(plot_->xAxis->pixelToCoord(event->pos().x()));
+
+        const double eps = 1.0 / std::max(fs_, 1.0);
+
+        double t0 = std::min(regionAnchorTime_, mouseX);
+        double t1 = std::max(regionAnchorTime_, mouseX);
+
+        n.time = t0;
+        n.duration = std::max(eps, t1 - t0);
+
+        // Update the visual if we have it, otherwise rebuild and re-find it
+        if (activeNoteVisualIndex_ >= 0 && activeNoteVisualIndex_ < notesCurrent_.size() &&
+            notesCurrent_[activeNoteVisualIndex_].noteIndex == creatingNoteIndex_)
+        {
+            auto& nv = notesCurrent_[activeNoteVisualIndex_];
+            const double yLow  = plot_->yAxis->range().lower;
+            const double yHigh = plot_->yAxis->range().upper;
+
+            if (nv.rect) {
+                nv.rect->topLeft->setCoords(t0, yHigh);
+                nv.rect->bottomRight->setCoords(t1, yLow);
+            }
+            if (nv.text) {
+                nv.text->position->setCoords(t0, yHigh);
+            }
+        }
+        else
+        {
+            updateNoteItems(currentX0, currentX1);
+
+            activeNoteVisualIndex_ = -1;
+            for (int i = 0; i < notesCurrent_.size(); ++i) {
+                if (notesCurrent_[i].noteIndex == creatingNoteIndex_) {
+                    activeNoteVisualIndex_ = i;
+                    break;
+                }
+            }
+        }
+
+        plot_->replot(QCustomPlot::rpQueuedReplot);
+        return;
+    }
+
+
     // If we are currently dragging a note, handle that first
-    if (draggingNote_ && activeNoteVisualIndex_ >= 0) {
+    if (draggingNote_ && activeNoteVisualIndex_ >= 0)    {
         if (activeNoteVisualIndex_ >= notesCurrent_.size())
             return;
 
@@ -135,48 +291,86 @@ void ECGViewer::onPlotMouseMove(QMouseEvent* event)
 
         Note& n = notes_[nv.noteIndex];
 
-        double mouseX = plot_->xAxis->pixelToCoord(event->pos().x());
-        double newStart = mouseX + noteDragOffsetSeconds_;
+        auto clampTime = [this](double x) {
+            return std::clamp(x, 0.0, total_time_);
+        };
 
-        // Clamp to valid range. If region, keep end inside total_time_ too.
-        newStart = std::max(0.0, newStart);
+        double mouseX = clampTime(plot_->xAxis->pixelToCoord(event->pos().x()));
+        const double eps = 1.0 / std::max(fs_, 1.0);
 
-        if (n.duration > 0.0) {
-            // region note: keep region within [0, total_time_]
-            if (newStart + n.duration > total_time_)
-                newStart = std::max(0.0, total_time_ - n.duration);
-        } else {
-            // point note
-            if (newStart > total_time_)
-                newStart = total_time_;
+        // create region
+        if (noteDragMode_ == NoteDragMode::CreateRegion)
+        {
+            double t0 = std::min(regionAnchorTime_, mouseX);
+            double t1 = std::max(regionAnchorTime_, mouseX);
+
+            n.time = t0;
+            n.duration = std::max(eps, t1 - t0);
         }
 
-        n.time = newStart;
+        // resize lefft edge
+        else if (noteDragMode_ == NoteDragMode::ResizeLeft)
+        {
+            double newStart = clampTime(std::min(mouseX, originalEnd_));
+            double newEnd   = originalEnd_;
 
+            if (newEnd - newStart < eps)
+                newStart = newEnd - eps;
+
+            n.time = newStart;
+            n.duration = std::max(eps, newEnd - newStart);
+        }
+
+        // resize right edge
+        else if (noteDragMode_ == NoteDragMode::ResizeRight)
+        {
+            double newStart = originalStart_;
+            double newEnd   = clampTime(std::max(mouseX, originalStart_));
+
+            if (newEnd - newStart < eps)
+                newEnd = newStart + eps;
+
+            n.time = newStart;
+            n.duration = std::max(eps, newEnd - newStart);
+        }
+
+        // move note (region or point)
+        else // NoteDragMode::Move
+        {
+            double newStart = clampTime(mouseX + noteDragOffsetSeconds_);
+
+            if (n.duration > 0.0) {
+                // keep region fully inside signal
+                if (newStart + n.duration > total_time_)
+                    newStart = std::max(0.0, total_time_ - n.duration);
+            }
+
+            n.time = newStart;
+        }
+
+        // update visuals in place
         const double yLow  = plot_->yAxis->range().lower;
         const double yHigh = plot_->yAxis->range().upper;
 
-        // Update the visuals in-place
         if (nv.line) {
             nv.line->start->setCoords(n.time, yLow);
             nv.line->end->setCoords(n.time, yHigh);
         }
 
         if (nv.rect) {
-            const double t0 = n.time;
-            const double t1 = n.time + std::max(0.0, n.duration);
-            nv.rect->topLeft->setCoords(t0, yHigh);
-            nv.rect->bottomRight->setCoords(t1, yLow);
+            nv.rect->topLeft->setCoords(n.time, yHigh);
+            nv.rect->bottomRight->setCoords(n.time + n.duration, yLow);
         }
 
         if (nv.text) {
             nv.text->position->setCoords(n.time, yHigh);
         }
 
-        setCursor(Qt::ClosedHandCursor);
+        setCursor(Qt::SizeHorCursor);
         plot_->replot(QCustomPlot::rpQueuedReplot);
         return;
     }
+
 
     // If we are currently dragging a fiducial, do that logic
     if (draggingFiducial_ && activeFiducialIndex_ >= 0)
@@ -296,6 +490,46 @@ void ECGViewer::onPlotMouseRelease(QMouseEvent* event)
 {
     if (event->button() != Qt::LeftButton)
         return;
+    if (creatingRegion_) {
+        creatingRegion_ = false;
+
+        // If the user just clicked without dragging, duration may be tiny.
+        // You can either keep it as a point note or delete it.
+        if (creatingNoteIndex_ >= 0 && creatingNoteIndex_ < notes_.size()) {
+            Note& n = notes_[creatingNoteIndex_];
+
+            // Optional: treat tiny regions as point notes
+            const double minDur = 1.0 / std::max(fs_, 1.0); // ~1 sample
+            if (n.duration < minDur) {
+                n.duration = 0.0;
+            }
+
+            // Clamp end
+            if (n.time < 0.0) n.time = 0.0;
+            if (n.time > total_time_) n.time = total_time_;
+            if (n.duration < 0.0) n.duration = 0.0;
+            if (n.time + n.duration > total_time_)
+                n.duration = std::max(0.0, total_time_ - n.time);
+
+            // Rebuild visuals (because a point note may need a line instead of rect)
+            updateNoteItems(currentX0, currentX1);
+            refreshNotesList();
+            plot_->replot();
+
+            // Optional: open editor after creation
+            openNoteEditor(creatingNoteIndex_);
+        }
+
+        creatingNoteIndex_ = -1;
+        activeNoteVisualIndex_ = -1;
+        regionAnchorTime_ = 0.0;
+
+        setCursor(Qt::ArrowCursor);
+        plot_->setInteractions(savedInteractions_);
+        noteDragMode_ = NoteDragMode::None;
+        return;
+    }
+
 
         // Note drag end
     if (draggingNote_ && activeNoteVisualIndex_ >= 0) {
@@ -307,6 +541,11 @@ void ECGViewer::onPlotMouseRelease(QMouseEvent* event)
         plot_->setInteractions(savedInteractions_);
         plot_->replot();
         // no need to recreate items – we directly updated them
+        noteDragMode_ = NoteDragMode::None;
+        noteDragOffsetSeconds_ = 0.0;
+        originalStart_ = originalEnd_ = 0.0;
+        regionPressTime_ = 0.0;
+
         return;
     }
 
