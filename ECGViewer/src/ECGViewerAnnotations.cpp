@@ -137,6 +137,13 @@ void ECGViewer::openNoteEditor(int noteIndex)
     timeSpin->setValue(n.time);
     form->addRow(QStringLiteral("Time (s):"), timeSpin);
 
+    auto* durSpin = new QDoubleSpinBox(&dlg);
+    durSpin->setDecimals(5);
+    durSpin->setRange(0.0, total_time_);
+    durSpin->setValue(n.duration);
+    form->addRow(QStringLiteral("Duration (s):"), durSpin);
+
+
     auto* voltsSpin = new QDoubleSpinBox(&dlg);
     voltsSpin->setDecimals(5);
     // a bit generous
@@ -155,14 +162,21 @@ void ECGViewer::openNoteEditor(int noteIndex)
     QObject::connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
 
     if (dlg.exec() == QDialog::Accepted) {
-        n.tag   = tagEdit->text();
-        n.time  = timeSpin->value();
+        n.tag = tagEdit->text();
+        n.time = timeSpin->value();
+        n.duration = durSpin->value();
         n.volts = voltsSpin->value();
         n.detail = detailEdit->toPlainText();
 
-        // After editing time, ensure it's clamped
+        // Clamp
         if (n.time < 0.0) n.time = 0.0;
         if (n.time > total_time_) n.time = total_time_;
+
+        // Ensure region doesn't run past end
+        if (n.duration < 0.0) n.duration = 0.0;
+        if (n.time + n.duration > total_time_)
+            n.duration = std::max(0.0, total_time_ - n.time);
+
 
         // Recreate visuals
         updateNoteItems(currentX0, currentX1);
@@ -336,6 +350,7 @@ void ECGViewer::onSaveNotes(const bool guiSave)
             o["tag"] = n.tag;
             o["detail"] = n.detail;
             o["time"] = n.time;
+            o["duration"] = n.duration;
             o["volts"] = n.volts;
             // o["type"] = static_cast<int>(n.type);
             arr.append(o);
@@ -376,6 +391,7 @@ void ECGViewer::onSaveNotes(const bool guiSave)
         o["detail"] = n.detail;
         o["time"] = n.time;
         o["volts"] = n.volts;
+        o["duration"] = n.duration;
         // o["type"] = static_cast<int>(n.type);
         arr.append(o);
     }
@@ -508,6 +524,10 @@ void ECGViewer::onLoadNotes()
         n.detail = o.value("detail").toString();
         n.time = o.value("time").toDouble();
         n.volts = o.value("volts").toDouble();
+        n.duration = o.value("duration").toDouble(0.0);
+        if (n.duration < 0.0) n.duration = 0.0;
+        if (n.time + n.duration > total_time_)
+            n.duration = std::max(0.0, total_time_ - n.time);
         // n.type = static_cast<NoteType>(o.value("type").toInt());
 
         // Clamp time into [0, total_time_]

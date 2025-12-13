@@ -180,10 +180,9 @@ void ECGViewer::updateNoteItems(double x0, double x1)
 {
     // Remove old note items
     for (auto& nv : notesCurrent_) {
-        if (nv.line)
-            plot_->removeItem(nv.line);
-        if (nv.text)
-            plot_->removeItem(nv.text);
+        if (nv.line) plot_->removeItem(nv.line);
+        if (nv.rect) plot_->removeItem(nv.rect);
+        if (nv.text) plot_->removeItem(nv.text);
     }
     notesCurrent_.clear();
 
@@ -192,32 +191,71 @@ void ECGViewer::updateNoteItems(double x0, double x1)
 
     for (int i = 0; i < notes_.size(); ++i) {
         const Note& n = notes_[i];
-        double t = n.time;
-        if (t < x0 || t > x1)
-            continue;
 
-        // vertical "stem" (shorter than fiducials if you like)
-        auto* line = new QCPItemLine(plot_);
-        line->start->setCoords(t, yLow);
-        line->end->setCoords(t, yHigh);
-        line->setPen(QPen(Qt::darkCyan, 1.0, Qt::DashLine));
-        line->setSelectable(true);
+        const double t0 = n.time;
+        const double t1 = n.time + std::max(0.0, n.duration);
 
-        // text label at top (“tag”)
-        auto* txt = new QCPItemText(plot_);
-        txt->position->setCoords(t, yHigh);
-        txt->setPositionAlignment(Qt::AlignRight | Qt::AlignTop);
-        txt->setText(n.tag.isEmpty() ? QStringLiteral("Note") : n.tag);
-        txt->setColor(Qt::darkCyan);
-        txt->setBrush(QBrush(QColor(255, 255, 255, 180))); // little white bg
-        txt->setPadding(QMargins(2, 2, 2, 2));
-        txt->setClipToAxisRect(true);
-        txt->setSelectable(true);
+        // Visibility test:
+        // - point note visible if t0 in [x0,x1]
+        // - region visible if it overlaps [x0,x1]
+        const bool isRegion = (n.duration > 0.0);
+        if (!isRegion) {
+            if (t0 < x0 || t0 > x1) continue;
+        } else {
+            if (t1 < x0 || t0 > x1) continue;
+        }
 
         NoteVisual nv;
         nv.noteIndex = i;
-        nv.line = line;
-        nv.text = txt;
+
+        if (!isRegion) {
+            // point note (existing behavior)
+            auto* line = new QCPItemLine(plot_);
+            line->start->setCoords(t0, yLow);
+            line->end->setCoords(t0, yHigh);
+            line->setPen(QPen(Qt::darkCyan, 1.0, Qt::DashLine));
+            line->setSelectable(true);
+
+            auto* txt = new QCPItemText(plot_);
+            txt->position->setCoords(t0, yHigh);
+            txt->setPositionAlignment(Qt::AlignRight | Qt::AlignTop);
+            txt->setText(n.tag.isEmpty() ? QStringLiteral("Note") : n.tag);
+            txt->setColor(Qt::darkCyan);
+            txt->setBrush(QBrush(QColor(255, 255, 255, 180)));
+            txt->setPadding(QMargins(2, 2, 2, 2));
+            txt->setClipToAxisRect(true);
+            txt->setSelectable(true);
+
+            nv.line = line;
+            nv.text = txt;
+        } else {
+            // region note
+            auto* rect = new QCPItemRect(plot_);
+            rect->topLeft->setCoords(t0, yHigh);
+            rect->bottomRight->setCoords(t1, yLow);
+
+            QPen pen(Qt::darkCyan);
+            pen.setWidthF(1.0);
+            rect->setPen(pen);
+            rect->setBrush(QBrush(QColor(0, 139, 139, 40))); // translucent fill
+            rect->setSelectable(true);
+            rect->setClipToAxisRect(true);
+
+            // label at start (you can use mid if you prefer)
+            auto* txt = new QCPItemText(plot_);
+            txt->position->setCoords(t0, yHigh);
+            txt->setPositionAlignment(Qt::AlignLeft | Qt::AlignTop);
+            txt->setText(n.tag.isEmpty() ? QStringLiteral("Region") : n.tag);
+            txt->setColor(Qt::darkCyan);
+            txt->setBrush(QBrush(QColor(255, 255, 255, 180)));
+            txt->setPadding(QMargins(2, 2, 2, 2));
+            txt->setClipToAxisRect(true);
+            txt->setSelectable(true);
+
+            nv.rect = rect;
+            nv.text = txt;
+        }
+
         notesCurrent_.push_back(nv);
     }
 }

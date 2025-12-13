@@ -51,6 +51,14 @@ install_build() {
     echo "Install complete."
 }
 
+help() {
+  echo "Useage build.bash [--clean | --clean-build | --install]"
+  echo ""
+  echo "--clean: Clean up all build files and pybind files"
+  echo "--clean-build: Clean up all build files and then do a fresh build"
+  echo "--install: This will install the exectuable on the system (will probably remove soon)"
+}
+
 ACTION="build"   # default action
 
 if [[ $# -gt 0 ]]; then
@@ -60,6 +68,12 @@ if [[ $# -gt 0 ]]; then
             ;;
         --install)
             ACTION="install"
+            ;;
+        --clean-build)
+            ACTION="clean_and_build"
+            ;;
+        --help)
+            ACTION="help"
             ;;
         *)
             echo "Unknown option: $1"
@@ -75,6 +89,13 @@ case "$ACTION" in
         ;;
     build)
         configure_and_build
+        ;;
+    clean_and_build)
+        clean_build
+        configure_and_build
+        ;;
+    help)
+        help
         ;;
     install)
         configure_and_build

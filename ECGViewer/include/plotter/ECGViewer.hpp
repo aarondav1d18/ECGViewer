@@ -24,11 +24,13 @@ namespace ECGViewer {
 
 struct Note
 {
-    QString tag; // easier with Qt widgets
-    QString detail; // free-text detail
-    double time = 0; // seconds (relative, like fiducials)
-    double volts = 0; // optional; can be y-value at note time
+    QString tag;
+    QString detail;
+    double time = 0;      // start time (s)
+    double duration = 0;  // seconds. 0 => point note, >0 => region note
+    double volts = 0;
 };
+
 
 
 class ECGViewer : public QMainWindow
@@ -116,10 +118,12 @@ private:
     };
     struct NoteVisual
     {
-        int noteIndex = -1; // index into notes_
-        QCPItemLine* line = nullptr;
+        int noteIndex = -1;
+        QCPItemLine* line = nullptr;   // for point notes
         QCPItemText* text = nullptr;
+        QCPItemRect* rect = nullptr;   // for region notes
     };
+
 
     QVector<FiducialVisual> fiducialsCurrent_;  // items currently visible in window
 
