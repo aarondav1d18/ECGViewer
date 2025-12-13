@@ -38,6 +38,11 @@ class LauncherStyleMixin:
                 border: 1px solid #b0b0b0;
                 background-color: #ffffff;
             }
+            QPushButton#primaryButton:disabled {
+                background-color: #d0d0d0;
+                border: 1px solid #b0b0b0;
+                color: #ffffff;
+            }
             QPushButton:hover {
                 background-color: #f0f0f0;
             }
