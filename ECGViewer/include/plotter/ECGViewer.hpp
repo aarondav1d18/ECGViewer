@@ -31,33 +31,31 @@ struct Note
     double volts = 0;
 };
 
-
-
 class ECGViewer : public QMainWindow
 {
 public:
     ECGViewer(const QVector<double>& t,
-                const QVector<double>& vOrig,
-                const QVector<double>& vClean,
-                const QVector<unsigned char>& artMask,
-                double fs,
-                double window_s,
-                bool has_ylim,
-                double ymin,
-                double ymax,
-                bool hide_artifacts,
-                const QVector<double>& pTimes,
-                const QVector<double>& pVals,
-                const QVector<double>& qTimes,
-                const QVector<double>& qVals,
-                const QVector<double>& rTimes,
-                const QVector<double>& rVals,
-                const QVector<double>& sTimes,
-                const QVector<double>& sVals,
-                const QVector<double>& tTimes,
-                const QVector<double>& tVals,
-                const QString& filePrefix,
-                QWidget* parent = nullptr);
+              const QVector<double>& vOrig,
+              const QVector<double>& vClean,
+              const QVector<unsigned char>& artMask,
+              double fs,
+              double window_s,
+              bool has_ylim,
+              double ymin,
+              double ymax,
+              bool hide_artifacts,
+              const QVector<double>& pTimes,
+              const QVector<double>& pVals,
+              const QVector<double>& qTimes,
+              const QVector<double>& qVals,
+              const QVector<double>& rTimes,
+              const QVector<double>& rVals,
+              const QVector<double>& sTimes,
+              const QVector<double>& sVals,
+              const QVector<double>& tTimes,
+              const QVector<double>& tVals,
+              const QString& filePrefix,
+              QWidget* parent = nullptr);
 
     enum class FiducialType { P, Q, R, S, T };
 
@@ -69,7 +67,7 @@ private:
     void nudge(int deltaSamples);
     void updateFiducialLines(double x0, double x1);
     void updateWindowLength(double newWindowSeconds);
-    void deleteHoveredFiducial(); 
+    void deleteHoveredFiducial();
     void updateNoteItems(double x0, double x1);
     void openNoteEditor(int noteIndex);
     void deleteHoveredNote();
@@ -77,6 +75,22 @@ private:
     void applyNotesFilter(); // filters by search text
     int noteIndexFromItem(QListWidgetItem* item) const;
     void onSave();
+
+    double clampTime(double t) const;
+    double cleanValueAtTime(double relTime) const;
+    void refreshFiducialGraph(FiducialType type);
+
+    QString fiducialLabel(FiducialType type) const;
+    QChar fiducialChar(FiducialType type) const;
+    FiducialType fiducialTypeFromText(const QString& s) const;
+
+    QString noteListLine(const Note& n) const;
+    bool noteMatchesFilter(const Note& n, const QString& filter) const;
+
+    int createNoteAtTime(double relTime);
+    void clampNoteToBounds(Note& n) const;
+
+    QDir ensureDataDir() const;
 
     QVector<double> t_;
     QVector<double> vOrig_;
@@ -135,7 +149,6 @@ private:
         QCPItemRect* rect = nullptr;   // for region notes
     };
 
-
     QVector<FiducialVisual> fiducialsCurrent_;  // items currently visible in window
 
     bool draggingFiducial_ = false;
@@ -149,7 +162,6 @@ private:
     bool draggingNote_ = false;
     int  activeNoteVisualIndex_ = -1;
     double noteDragOffsetSeconds_ = 0.0;
-
 
     // helpers to get the correct vecs from a type
     inline QVector<double>& timesFor(FiducialType type)
@@ -165,7 +177,6 @@ private:
         throw std::runtime_error("Invalid FiducialType in timesFor()");
     }
 
-
     inline QVector<double>& valsFor(FiducialType type)
     {
         switch (type) {
@@ -175,7 +186,7 @@ private:
         case FiducialType::S: return sVals_;
         case FiducialType::T: return tVals_;
         }
-        
+
         throw std::runtime_error("Invalid FiducialType in valsFor()");
     }
 
@@ -199,8 +210,6 @@ private:
     QListWidget* notesListWidget_ = nullptr;
     QLineEdit* notesSearchEdit_ = nullptr;
     QPushButton* btnNotesDialog_ = nullptr;
-
-
 
     QCPGraph* graphCleanBase_;
     QCPGraph* graphCleanNoise_;
@@ -229,6 +238,6 @@ private slots:
     void onNotesListItemDoubleClicked(QListWidgetItem* item);
     void onNotesSearchTextChanged(const QString& text);
     void onShowNotesDialog();
-
 };
+
 } // namespace ECGViewer

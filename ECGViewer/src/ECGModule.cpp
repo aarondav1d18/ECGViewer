@@ -43,12 +43,10 @@ static void show_ecg_viewer(
     py::array_t<double> t_vals,
     const py::object& file_prefix)
 {
-    // --- Convert numpy → QVector and validate lengths ---
-
-    auto tq      = toQVector1D<double>(t,       "t");
-    auto vOrigQ  = toQVector1D<double>(v_orig,  "v_orig");
+    auto tq = toQVector1D<double>(t, "t");
+    auto vOrigQ = toQVector1D<double>(v_orig, "v_orig");
     auto vCleanQ = toQVector1D<double>(v_clean, "v_clean");
-    auto artQ    = toQVector1D<unsigned char>(art_mask, "art_mask");
+    auto artQ = toQVector1D<unsigned char>(art_mask, "art_mask");
 
     if (tq.size() != vOrigQ.size() ||
         tq.size() != vCleanQ.size() ||
@@ -102,7 +100,6 @@ static void show_ecg_viewer(
     checkPair(sTimesQ, sValsQ, "S");
     checkPair(tTimesQ, tValsQ, "T");
 
-    // --- QApplication handling ---
     // Reuse existing QApplication if present (Python-level Qt launcher),
     // otherwise create our own and run its event loop.
 

@@ -17,33 +17,39 @@
 #include <QJsonObject>
 #include <QFile>
 
-
 namespace ECGViewer {
-// Can move some of the helpers from here to header to reduce amount of code in this file
-// or can just leave it or split into multiple files if it gets too big but should be fine while
-// working on this class for now.
+
+/**
+ * @brief ECGViewer constructor: initializes state, builds UI, and connects interactions.
+ * @details This sets up:
+ * - Plot with cleaned ECG + optional original trace
+ * - Fiducial scatter graphs
+ * - Traversal controls (slider, zoom in/out, reset, rect zoom, notes dialog, save)
+ * - Manual fiducial insertion tab
+ * - Axis range clamp handler that maps x-range to slider position
+ */
 ECGViewer::ECGViewer(const QVector<double>& t,
-                         const QVector<double>& vOrig,
-                         const QVector<double>& vClean,
-                         const QVector<unsigned char>& artMask,
-                         double fs,
-                         double window_s,
-                         bool has_ylim,
-                         double ymin,
-                         double ymax,
-                         bool hide_artifacts,
-                         const QVector<double>& pTimes,
-                         const QVector<double>& pVals,
-                         const QVector<double>& qTimes,
-                         const QVector<double>& qVals,
-                         const QVector<double>& rTimes,
-                         const QVector<double>& rVals,
-                         const QVector<double>& sTimes,
-                         const QVector<double>& sVals,
-                         const QVector<double>& tTimes,
-                         const QVector<double>& tVals,
-                         const QString& filePrefix,
-                         QWidget* parent)
+                     const QVector<double>& vOrig,
+                     const QVector<double>& vClean,
+                     const QVector<unsigned char>& artMask,
+                     double fs,
+                     double window_s,
+                     bool has_ylim,
+                     double ymin,
+                     double ymax,
+                     bool hide_artifacts,
+                     const QVector<double>& pTimes,
+                     const QVector<double>& pVals,
+                     const QVector<double>& qTimes,
+                     const QVector<double>& qVals,
+                     const QVector<double>& rTimes,
+                     const QVector<double>& rVals,
+                     const QVector<double>& sTimes,
+                     const QVector<double>& sVals,
+                     const QVector<double>& tTimes,
+                     const QVector<double>& tVals,
+                     const QString& filePrefix,
+                     QWidget* parent)
     : QMainWindow(parent),
       t_(t),
       vOrig_(vOrig),
@@ -66,10 +72,9 @@ ECGViewer::ECGViewer(const QVector<double>& t,
         throw std::runtime_error("All input vectors must be non-empty and of equal length");
     }
 
-    // Time/window bookkeeping 
     total_time_ = t_.last() - t_.first();
     if (total_time_ <= 0.0) {
-        total_time_ = 1.0 / std::max(fs_, 1.0); // avoid degenerate case
+        total_time_ = 1.0 / std::max(fs_, 1.0);
     }
 
     if (window_s_ <= 0.0 || window_s_ > total_time_) {
@@ -77,7 +82,6 @@ ECGViewer::ECGViewer(const QVector<double>& t,
     }
 
     window_s_original_ = window_s_;
-    // min window: at least ~50ms or ~5 samples, whichever is larger
     min_window_s_ = std::max(0.05, 5.0 / std::max(fs_, 1.0));
 
     window_samples_ = static_cast<int>(window_s_ * fs_);
@@ -86,7 +90,6 @@ ECGViewer::ECGViewer(const QVector<double>& t,
 
     max_start_sample_ = std::max(0, static_cast<int>(t_.size()) - window_samples_ - 1);
 
-    // UI setup 
     auto* central = new QWidget(this);
     auto* vbox = new QVBoxLayout(central);
 
@@ -98,23 +101,18 @@ ECGViewer::ECGViewer(const QVector<double>& t,
     connect(plot_, &QCustomPlot::mouseMove,   this, &ECGViewer::onPlotMouseMove);
     connect(plot_, &QCustomPlot::mouseRelease,this, &ECGViewer::onPlotMouseRelease);
 
-    // Axes labels
     plot_->xAxis->setLabel("Time (s)");
     plot_->yAxis->setLabel("Voltage (V)");
     plot_->xAxis->grid()->setVisible(true);
     plot_->yAxis->grid()->setVisible(true);
 
-    // Default: normal drag/zoom via wheel
     plot_->setInteractions(QCP::iRangeDrag | QCP::iRangeZoom);
     plot_->axisRect()->setRangeDrag(Qt::Horizontal);
     plot_->axisRect()->setRangeZoom(Qt::Horizontal);
     plot_->axisRect()->setRangeZoomAxes(plot_->xAxis, plot_->yAxis);
 
-
-    // Setup selection rect appearance (used in rect zoom mode)
     plot_->selectionRect()->setPen(QPen(Qt::red));
     plot_->selectionRect()->setBrush(QBrush(QColor(255, 0, 0, 50)));
-
 
     if (has_ylim) {
         plot_->yAxis->setRange(ymin, ymax);
@@ -122,16 +120,12 @@ ECGViewer::ECGViewer(const QVector<double>& t,
         plot_->yAxis->setRange(-0.1, 0.15);
     }
 
-    // Store original y-axis range for "Reset View"
     y_min_orig_ = plot_->yAxis->range().lower;
     y_max_orig_ = plot_->yAxis->range().upper;
 
-    // Graphs 
-    // cleaned base (non-artifact)
     graphCleanBase_ = plot_->addGraph();
     graphCleanBase_->setPen(QPen(Qt::blue, 1.2));
 
-    // full original trace (thin grey)
     graphOrigFull_ = plot_->addGraph();
     {
         QPen p(Qt::gray);
@@ -140,8 +134,7 @@ ECGViewer::ECGViewer(const QVector<double>& t,
         graphOrigFull_->setPen(p);
     }
 
-    // Scatter graphs for fiducials
-    auto makeScatterGraph = [this](const QColor& color, QCPScatterStyle::ScatterShape shape, 
+    auto makeScatterGraph = [this](const QColor& color, QCPScatterStyle::ScatterShape shape,
                                    double size) -> QCPGraph* {
         QCPGraph* g = plot_->addGraph();
         g->setLineStyle(QCPGraph::lsNone);
@@ -153,21 +146,18 @@ ECGViewer::ECGViewer(const QVector<double>& t,
     graphP_ = makeScatterGraph(Qt::blue, QCPScatterStyle::ssDisc, 6);
     graphQ_ = makeScatterGraph(Qt::green, QCPScatterStyle::ssDisc, 6);
     graphR_ = makeScatterGraph(Qt::red, QCPScatterStyle::ssTriangle, 8);
-    graphS_ = makeScatterGraph(Qt::magenta,QCPScatterStyle::ssDisc, 6);
-    graphT_ = makeScatterGraph(QColor(255, 140, 0), QCPScatterStyle::ssDisc, 6); // orange-ish
+    graphS_ = makeScatterGraph(Qt::magenta, QCPScatterStyle::ssDisc, 6);
+    graphT_ = makeScatterGraph(QColor(255, 140, 0), QCPScatterStyle::ssDisc, 6);
 
-    // Set full fiducial scatter data (QCustomPlot will clip to window)
     graphP_->setData(pTimes_, pVals_);
     graphQ_->setData(qTimes_, qVals_);
     graphR_->setData(rTimes_, rVals_);
     graphS_->setData(sTimes_, sVals_);
     graphT_->setData(tTimes_, tVals_);
 
-    // Tabs at the bottom: Traversal + Manual Insert
     tabWidget_ = new QTabWidget(central);
     tabWidget_->setTabPosition(QTabWidget::South);
 
-    // Traversal tab (existing controls)
     QWidget* traversalTab = new QWidget(tabWidget_);
     auto* traversalLayout = new QHBoxLayout(traversalTab);
 
@@ -198,7 +188,6 @@ ECGViewer::ECGViewer(const QVector<double>& t,
     tabWidget_->addTab(traversalTab, "Traversal");
     vbox->addWidget(tabWidget_);
 
-    // Manual insert tab
     QWidget* manualTab = new QWidget(tabWidget_);
     auto* manualLayout = new QHBoxLayout(manualTab);
 
@@ -223,22 +212,17 @@ ECGViewer::ECGViewer(const QVector<double>& t,
     setCentralWidget(central);
     setWindowTitle("ECG Viewer (Qt)");
 
-    // Connections 
     connect(slider_, &QSlider::valueChanged,
             this, [this](int value) { updateWindow(value); });
 
-    auto buttonStep = [this]() {
-        return static_cast<int>(0.2 * window_samples_);
-    };
     connect(manualInsertButton_, &QPushButton::clicked,
-        this, &ECGViewer::onInsertManualFiducial);
+            this, &ECGViewer::onInsertManualFiducial);
 
     connect(btnZoomRect_, &QPushButton::toggled,
             this, [this](bool checked)
     {
         zoomRectMode_ = checked;
         if (zoomRectMode_) {
-            // enable rectangle zoom; wheel zoom still works
             plot_->setInteractions(QCP::iRangeZoom);
             plot_->setSelectionRectMode(QCP::srmZoom);
         } else {
@@ -246,12 +230,10 @@ ECGViewer::ECGViewer(const QVector<double>& t,
             plot_->setInteractions(QCP::iRangeDrag | QCP::iRangeZoom);
         }
     });
-    // Stop user from dragging window to negative x and also allow use to drag instead of using
-    // arrow keys or slider
+
     connect(plot_->xAxis, qOverload<const QCPRange &>(&QCPAxis::rangeChanged),
             this, [this](const QCPRange &newRange)
     {
-        // Avoid recursion or interference while dragging fiducials
         if (suppressRangeHandler_ || draggingFiducial_)
             return;
 
@@ -289,25 +271,23 @@ ECGViewer::ECGViewer(const QVector<double>& t,
             startSample = max_start_sample_;
 
         suppressRangeHandler_ = true;
-        slider_->setValue(startSample);   // triggers updateWindow(...)
+        slider_->setValue(startSample);
         suppressRangeHandler_ = false;
     });
 
     connect(btnSave_, &QPushButton::clicked,
             this, &ECGViewer::onSave);
 
-    // Zoom in/out buttons (time zoom on x-axis)
     connect(btnZoomIn_, &QPushButton::clicked,
             this, [this]() {
-                updateWindowLength(window_s_ / 1.5);  // zoom in
+                updateWindowLength(window_s_ / 1.5);
             });
 
     connect(btnZoomOut_, &QPushButton::clicked,
             this, [this]() {
-                updateWindowLength(window_s_ * 1.5);  // zoom out
+                updateWindowLength(window_s_ * 1.5);
             });
 
-    // Reset view (time + y-range)
     connect(btnResetView_, &QPushButton::clicked,
             this, [this]() {
                 updateWindowLength(window_s_original_);
@@ -315,21 +295,19 @@ ECGViewer::ECGViewer(const QVector<double>& t,
                 plot_->replot();
             });
 
-    // Exit button
     connect(btnExit_, &QPushButton::clicked,
             this, [this]() {
                 close();
             });
 
-    // double-click on plot to open note editor if note under cursor
     connect(plot_, &QCustomPlot::mouseDoubleClick,
             this, &ECGViewer::onPlotMouseDoubleClick);
 
     connect(btnNotesDialog_, &QPushButton::clicked,
             this, &ECGViewer::onShowNotesDialog);
 
-    // Initial window
     refreshNotesList();
     updateWindow(0);
 }
+
 } // namespace ECGViewer

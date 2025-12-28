@@ -21,34 +21,157 @@
 #include <QLabel>
 #include <QPushButton>
 #include <QFileInfo>
+#include <QDir>
+#include <QTextStream>
 #include <iostream>
+#include <cmath>
+#include <algorithm>
+
 namespace ECGViewer {
+
+double ECGViewer::clampTime(double t) const
+{
+    if (t < 0.0) return 0.0;
+    if (t > total_time_) return total_time_;
+    return t;
+}
+
+/**
+ * @brief Sample the cleaned signal at a relative time.
+ * @details Uses nearest-sample rounding based on fs_, and clamps index to [0, vClean_.size()-1].
+ */
+double ECGViewer::cleanValueAtTime(double relTime) const
+{
+    relTime = clampTime(relTime);
+
+    double absTime = t_.first() + relTime;
+    int idx = static_cast<int>(std::round((absTime - t_.first()) * fs_));
+    if (idx < 0) idx = 0;
+    if (idx >= vClean_.size()) idx = vClean_.size() - 1;
+    return vClean_[idx];
+}
+
+void ECGViewer::refreshFiducialGraph(FiducialType type)
+{
+    switch (type) {
+    case FiducialType::P: graphP_->setData(pTimes_, pVals_); break;
+    case FiducialType::Q: graphQ_->setData(qTimes_, qVals_); break;
+    case FiducialType::R: graphR_->setData(rTimes_, rVals_); break;
+    case FiducialType::S: graphS_->setData(sTimes_, sVals_); break;
+    case FiducialType::T: graphT_->setData(tTimes_, tVals_); break;
+    }
+}
+
+QString ECGViewer::fiducialLabel(FiducialType type) const
+{
+    switch (type) {
+    case FiducialType::P: return "P";
+    case FiducialType::Q: return "Q";
+    case FiducialType::R: return "R";
+    case FiducialType::S: return "S";
+    case FiducialType::T: return "T";
+    }
+    return "?";
+}
+
+QChar ECGViewer::fiducialChar(FiducialType type) const
+{
+    switch (type) {
+    case FiducialType::P: return 'P';
+    case FiducialType::Q: return 'Q';
+    case FiducialType::R: return 'R';
+    case FiducialType::S: return 'S';
+    case FiducialType::T: return 'T';
+    }
+    return '?';
+}
+
+ECGViewer::FiducialType ECGViewer::fiducialTypeFromText(const QString& s) const
+{
+    if (s == "P") return FiducialType::P;
+    if (s == "Q") return FiducialType::Q;
+    if (s == "S") return FiducialType::S;
+    if (s == "T") return FiducialType::T;
+    return FiducialType::R;
+}
+
+/**
+ * @brief Build a one-line list summary for a note.
+ * @details Includes time + tag, and a short snippet of detail when present.
+ */
+QString ECGViewer::noteListLine(const Note& n) const
+{
+    QString line = QString("%1s  |  %2")
+                       .arg(n.time, 0, 'f', 3)
+                       .arg(n.tag.isEmpty() ? QStringLiteral("Note") : n.tag);
+
+    if (!n.detail.isEmpty()) {
+        QString snippet = n.detail;
+        snippet.replace('\n', ' ');
+        if (snippet.size() > 60)
+            snippet = snippet.left(57) + "...";
+        line += "  |  " + snippet;
+    }
+
+    return line;
+}
+
+bool ECGViewer::noteMatchesFilter(const Note& n, const QString& filter) const
+{
+    if (filter.isEmpty())
+        return true;
+    QString haystack = n.tag + " " + n.detail;
+    return haystack.contains(filter, Qt::CaseInsensitive);
+}
+
+int ECGViewer::createNoteAtTime(double relTime)
+{
+    Note n;
+    n.time = clampTime(relTime);
+    n.volts = cleanValueAtTime(n.time);
+    n.tag = QStringLiteral("Note %1").arg(notes_.size() + 1);
+    n.detail = QString();
+    n.duration = 0.0;
+    notes_.push_back(n);
+    return notes_.size() - 1;
+}
+
+/**
+ * @brief Clamp note fields to safe bounds.
+ * @details Ensures time in range and region end does not exceed total_time_.
+ */
+void ECGViewer::clampNoteToBounds(Note& n) const
+{
+    n.time = clampTime(n.time);
+
+    if (n.duration < 0.0)
+        n.duration = 0.0;
+
+    if (n.time + n.duration > total_time_)
+        n.duration = std::max(0.0, total_time_ - n.time);
+}
+
+QDir ECGViewer::ensureDataDir() const
+{
+    QDir dir("./ECGData");
+    if (!dir.exists())
+        dir.mkpath(".");
+    return dir;
+}
+
+/**
+ * @brief Insert a fiducial point at the center of the current window.
+ * @details Computes the new X as the window midpoint, samples Y from vClean_,
+ * inserts into sorted backing vectors, refreshes scatter and re-builds line items.
+ */
 void ECGViewer::onInsertManualFiducial()
 {
     QString choice = manualTypeCombo_ ? manualTypeCombo_->currentText() : QString("R");
+    FiducialType type = fiducialTypeFromText(choice);
 
-    FiducialType type = FiducialType::R;
-    if (choice == "P") type = FiducialType::P;
-    else if (choice == "Q") type = FiducialType::Q;
-    else if (choice == "R") type = FiducialType::R;
-    else if (choice == "S") type = FiducialType::S;
-    else if (choice == "T") type = FiducialType::T;
+    double newTime = clampTime(0.5 * (currentX0 + currentX1));
+    double newVal = cleanValueAtTime(newTime);
 
-    // Insert at the centre of the current window
-    double newTime = 0.5 * (currentX0 + currentX1);
-
-    // Clamp to full duration just in case
-    if (newTime < 0.0) newTime = 0.0;
-    if (newTime > total_time_) newTime = total_time_;
-
-    // Get Y value from clean signal at nearest sample
-    double absTime = t_.first() + newTime;
-    int sampleIndex = static_cast<int>(std::round((absTime - t_.first()) * fs_));
-    if (sampleIndex < 0) sampleIndex = 0;
-    if (sampleIndex >= vClean_.size()) sampleIndex = vClean_.size() - 1;
-    double newVal = vClean_[sampleIndex];
-
-    // Insert into correct vectors, keeping them sorted by time
     QVector<double>& times = timesFor(type);
     QVector<double>& vals = valsFor(type);
 
@@ -59,62 +182,27 @@ void ECGViewer::onInsertManualFiducial()
     times.insert(insertIndex, newTime);
     vals.insert(insertIndex, newVal);
 
-    // Update the correct scatter graph
-    switch (type) {
-    case FiducialType::P:
-        graphP_->setData(pTimes_, pVals_);
-        break;
-    case FiducialType::Q:
-        graphQ_->setData(qTimes_, qVals_);
-        break;
-    case FiducialType::R:
-        graphR_->setData(rTimes_, rVals_);
-        break;
-    case FiducialType::S:
-        graphS_->setData(sTimes_, sVals_);
-        break;
-    case FiducialType::T:
-        graphT_->setData(tTimes_, tVals_);
-        break;
-    }
+    refreshFiducialGraph(type);
 
-    // Recreate fiducial lines/labels for the current window
     updateFiducialLines(currentX0, currentX1);
     plot_->replot();
 }
 
 void ECGViewer::onNewNote()
 {
-    // place at centre of current window
-    double newTime = 0.5 * (currentX0 + currentX1);
+    double newTime = clampTime(0.5 * (currentX0 + currentX1));
+    int idx = createNoteAtTime(newTime);
 
-    // clamp
-    if (newTime < 0.0) newTime = 0.0;
-    if (newTime > total_time_) newTime = total_time_;
-
-    // sample volts from clean signal
-    double absTime = t_.first() + newTime;
-    int sampleIndex = static_cast<int>(std::round((absTime - t_.first()) * fs_));
-    if (sampleIndex < 0) sampleIndex = 0;
-    if (sampleIndex >= vClean_.size()) sampleIndex = vClean_.size() - 1;
-    double val = vClean_[sampleIndex];
-
-    Note n;
-    n.time = newTime;
-    n.volts = val;
-    n.tag = QStringLiteral("Note %1").arg(notes_.size() + 1);
-    n.detail = QString();
-
-    notes_.push_back(n);
-
-    // Refresh visuals
     updateNoteItems(currentX0, currentX1);
     plot_->replot();
 
-    // open editor immediately:
-    openNoteEditor(notes_.size() - 1);
+    openNoteEditor(idx);
 }
 
+/**
+ * @brief Edit a note in a modal dialog.
+ * @details Updates note fields only if accepted, then clamps and refreshes visuals.
+ */
 void ECGViewer::openNoteEditor(int noteIndex)
 {
     if (noteIndex < 0 || noteIndex >= notes_.size())
@@ -143,10 +231,8 @@ void ECGViewer::openNoteEditor(int noteIndex)
     durSpin->setValue(n.duration);
     form->addRow(QStringLiteral("Duration (s):"), durSpin);
 
-
     auto* voltsSpin = new QDoubleSpinBox(&dlg);
     voltsSpin->setDecimals(5);
-    // a bit generous
     voltsSpin->setRange(-1000.0, 1000.0);
     voltsSpin->setValue(n.volts);
     form->addRow(QStringLiteral("Voltage (V):"), voltsSpin);
@@ -168,17 +254,8 @@ void ECGViewer::openNoteEditor(int noteIndex)
         n.volts = voltsSpin->value();
         n.detail = detailEdit->toPlainText();
 
-        // Clamp
-        if (n.time < 0.0) n.time = 0.0;
-        if (n.time > total_time_) n.time = total_time_;
+        clampNoteToBounds(n);
 
-        // Ensure region doesn't run past end
-        if (n.duration < 0.0) n.duration = 0.0;
-        if (n.time + n.duration > total_time_)
-            n.duration = std::max(0.0, total_time_ - n.time);
-
-
-        // Recreate visuals
         updateNoteItems(currentX0, currentX1);
         plot_->replot();
     }
@@ -194,10 +271,8 @@ void ECGViewer::deleteHoveredNote()
     if (noteIndex < 0 || noteIndex >= notes_.size())
         return;
 
-    // remove actual note
     notes_.remove(noteIndex);
 
-    // after removal, just rebuild note items for current window
     updateNoteItems(currentX0, currentX1);
     plot_->replot();
 }
@@ -214,33 +289,17 @@ void ECGViewer::refreshNotesList()
     for (int i = 0; i < notes_.size(); ++i) {
         const Note& n = notes_[i];
 
-        QString line = QString("%1s  |  %2")
-                           .arg(n.time, 0, 'f', 3)
-                           .arg(n.tag.isEmpty() ? QStringLiteral("Note") : n.tag);
+        if (!noteMatchesFilter(n, filter))
+            continue;
 
-        if (!n.detail.isEmpty()) {
-            QString snippet = n.detail;
-            snippet.replace('\n', ' ');
-            if (snippet.size() > 60)
-                snippet = snippet.left(57) + "...";
-            line += "  |  " + snippet;
-        }
-
-        // Apply filter (simple substring on tag or detail)
-        if (!filter.isEmpty()) {
-            QString haystack = n.tag + " " + n.detail;
-            if (!haystack.contains(filter, Qt::CaseInsensitive))
-                continue;
-        }
-
-        auto* item = new QListWidgetItem(line, notesListWidget_);
-        item->setData(Qt::UserRole, i);  // store note index
+        auto* item = new QListWidgetItem(noteListLine(n), notesListWidget_);
+        item->setData(Qt::UserRole, i);
     }
 }
 
 void ECGViewer::applyNotesFilter()
 {
-    refreshNotesList(); // we’re rebuilding list with filter applied
+    refreshNotesList();
 }
 
 void ECGViewer::onNotesSearchTextChanged(const QString& /*text*/)
@@ -261,6 +320,10 @@ int ECGViewer::noteIndexFromItem(QListWidgetItem* item) const
     return idx;
 }
 
+/**
+ * @brief Jump the viewing window to center around the selected note.
+ * @details Updates x-axis range and then refreshes the window by sample index.
+ */
 void ECGViewer::onNotesListItemDoubleClicked(QListWidgetItem* item)
 {
     int noteIndex = noteIndexFromItem(item);
@@ -269,7 +332,6 @@ void ECGViewer::onNotesListItemDoubleClicked(QListWidgetItem* item)
 
     const Note& n = notes_[noteIndex];
 
-    // Center the window around this note
     double half = window_s_ * 0.5;
     double x0 = std::max(0.0, n.time - half);
     double x1 = std::min(total_time_, x0 + window_s_);
@@ -279,19 +341,12 @@ void ECGViewer::onNotesListItemDoubleClicked(QListWidgetItem* item)
 
     plot_->xAxis->setRange(x0, x1);
 
-    // Update window by sample index
     int startSample = static_cast<int>(x0 * fs_);
     if (startSample < 0) startSample = 0;
     if (startSample > max_start_sample_) startSample = max_start_sample_;
 
     updateWindow(startSample);
 
-    // Open the note editor popup
-    // Dont know if this would be good to do automatically when jumping to notes.
-    // going to leave it for now and maybe re enable it later.
-    // openNoteEditor(noteIndex);
-
-    // Refresh list in case tag/time changed
     refreshNotesList();
 }
 
@@ -308,42 +363,32 @@ void ECGViewer::onDeleteNoteFromList()
     if (noteIndex < 0)
         return;
 
-    // Optional confirmation but i fell this would get really annoying
-    // if (QMessageBox::question(this, "Delete Note",
-    //                           "Are you sure you want to delete this note?")
-    //     != QMessageBox::Yes)
-    //     return;
-
     notes_.remove(noteIndex);
 
-    // Rebuild visuals and list
     updateNoteItems(currentX0, currentX1);
     refreshNotesList();
     plot_->replot();
 }
 
+/**
+ * @brief Save notes as JSON.
+ * @details If guiSave is false, writes to ./ECGData/<prefix>_ecg_data.json without prompting.
+ * If guiSave is true, shows a file dialog.
+ */
 void ECGViewer::onSaveNotes(const bool guiSave)
 {
     if (notes_.isEmpty() && guiSave) {
         QMessageBox::information(this, "Save Notes", "There are no notes to save.");
         return;
     }
+
     if (!guiSave) {
-        // save to default location without asking
-        QVector<double> vals;
-        QVector<double> times;
-        // check if data folder is there if not make one
-        QString dataFolderPath = "./ECGData";
-        QDir dir(dataFolderPath);
-        if (!dir.exists()) {
-            dir.mkpath(".");
-        }
-        dir.setPath(dataFolderPath);
-        std::cout << "Data folder path: " << dataFolderPath.toStdString() << std::endl;
-        // get current folder path as a variable with gui
+        QDir dir = ensureDataDir();
+        std::cout << "Data folder path: " << dir.path().toStdString() << std::endl;
+
         QString fileNameNotes = dir.filePath(QString("%1_ecg_data.json").arg(filePrefix_));
         std::cout << "Saving to file: " << fileNameNotes.toStdString() << std::endl;
-        QFile file(fileNameNotes);
+
         QJsonArray arr;
         for (const auto& n : notes_) {
             QJsonObject o;
@@ -352,7 +397,6 @@ void ECGViewer::onSaveNotes(const bool guiSave)
             o["time"] = n.time;
             o["duration"] = n.duration;
             o["volts"] = n.volts;
-            // o["type"] = static_cast<int>(n.type);
             arr.append(o);
         }
 
@@ -369,6 +413,7 @@ void ECGViewer::onSaveNotes(const bool guiSave)
         f.close();
         return;
     }
+
     QString fileName = QFileDialog::getSaveFileName(
         this,
         "Save Notes",
@@ -378,11 +423,10 @@ void ECGViewer::onSaveNotes(const bool guiSave)
 
     if (fileName.isEmpty())
         return;
-        
+
     QFileInfo fi(fileName);
-    if (fi.suffix().isEmpty()) {
+    if (fi.suffix().isEmpty())
         fileName += ".json";
-    }
 
     QJsonArray arr;
     for (const auto& n : notes_) {
@@ -392,7 +436,6 @@ void ECGViewer::onSaveNotes(const bool guiSave)
         o["time"] = n.time;
         o["volts"] = n.volts;
         o["duration"] = n.duration;
-        // o["type"] = static_cast<int>(n.type);
         arr.append(o);
     }
 
@@ -411,22 +454,15 @@ void ECGViewer::onSaveNotes(const bool guiSave)
 
 void ECGViewer::onSave()
 {
-    QVector<double> vals;
-    QVector<double> times;
-    if (!notes_.isEmpty()) {
-        onSaveNotes(false); // save notes to default location
-    }
-    // check if data folder is there if not make one
-    QString dataFolderPath = "./ECGData";
-    QDir dir(dataFolderPath);
-    if (!dir.exists()) {
-        dir.mkpath(".");
-    }
-    dir.setPath(dataFolderPath);
-    std::cout << "Data folder path: " << dataFolderPath.toStdString() << std::endl;
-    // get current folder path as a variable with gui
+    if (!notes_.isEmpty())
+        onSaveNotes(false);
+
+    QDir dir = ensureDataDir();
+    std::cout << "Data folder path: " << dir.path().toStdString() << std::endl;
+
     QString fileName = dir.filePath(QString("%1_ecg_data.csv").arg(filePrefix_));
     std::cout << "Saving to file: " << fileName.toStdString() << std::endl;
+
     QFile file(fileName);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
         QMessageBox::warning(this, "Save ECG Data",
@@ -436,6 +472,7 @@ void ECGViewer::onSave()
 
     QTextStream out(&file);
     out << "Tag,Time,Voltage\n";
+
     std::vector<FiducialType> types = {
         FiducialType::P,
         FiducialType::Q,
@@ -443,22 +480,17 @@ void ECGViewer::onSave()
         FiducialType::S,
         FiducialType::T
     };
+
     for (const auto& type : types) {
-        vals = valsFor(type);
-        times = timesFor(type);
-        QChar tagChar;
-        switch (type) {
-        case FiducialType::P: tagChar = 'P'; break;
-        case FiducialType::Q: tagChar = 'Q'; break;
-        case FiducialType::R: tagChar = 'R'; break;
-        case FiducialType::S: tagChar = 'S'; break;
-        case FiducialType::T: tagChar = 'T'; break;
-        }
+        QVector<double>& vals = valsFor(type);
+        QVector<double>& times = timesFor(type);
+
+        QChar tagChar = fiducialChar(type);
         for (int i = 0; i < times.size(); ++i) {
-            // use string for tag
             out << tagChar << "," << times[i] << "," << vals[i] << "\n";
         }
     }
+
     file.close();
 }
 
@@ -474,16 +506,15 @@ void ECGViewer::onLoadNotes()
         return;
 
     QFile f(fileName);
-    // check file name against the data prefix. if it doesn't match, warn the user
+
     if (!QFileInfo(f).fileName().startsWith(filePrefix_)) {
         QMessageBox::StandardButton reply;
         reply = QMessageBox::question(this, "Load Notes",
                                       "The selected notes file does not match the current ECG data prefix.\n"
                                       "Are you sure you want to load it?",
-                                      QMessageBox::Yes|QMessageBox::No);
-        if (reply != QMessageBox::Yes) {
+                                      QMessageBox::Yes | QMessageBox::No);
+        if (reply != QMessageBox::Yes)
             return;
-        }
     }
 
     if (!f.open(QIODevice::ReadOnly)) {
@@ -517,6 +548,7 @@ void ECGViewer::onLoadNotes()
     for (const auto& v : arr) {
         if (!v.isObject())
             continue;
+
         QJsonObject o = v.toObject();
 
         Note n;
@@ -525,26 +557,23 @@ void ECGViewer::onLoadNotes()
         n.time = o.value("time").toDouble();
         n.volts = o.value("volts").toDouble();
         n.duration = o.value("duration").toDouble(0.0);
-        if (n.duration < 0.0) n.duration = 0.0;
-        if (n.time + n.duration > total_time_)
-            n.duration = std::max(0.0, total_time_ - n.time);
-        // n.type = static_cast<NoteType>(o.value("type").toInt());
 
-        // Clamp time into [0, total_time_]
-        if (n.time < 0.0) n.time = 0.0;
-        if (n.time > total_time_) n.time = total_time_;
+        clampNoteToBounds(n);
 
         loaded.push_back(n);
     }
 
     notes_ = loaded;
 
-    // Refresh visuals & list
     updateNoteItems(currentX0, currentX1);
     refreshNotesList();
     plot_->replot();
 }
 
+/**
+ * @brief Modal notes manager dialog with search/list/edit/delete/save/load.
+ * @details Uses local widgets; the backing data remains notes_.
+ */
 void ECGViewer::onShowNotesDialog()
 {
     QDialog dlg(this);
@@ -589,26 +618,11 @@ void ECGViewer::onShowNotesDialog()
         for (int i = 0; i < notes_.size(); ++i) {
             const Note& n = notes_[i];
 
-            QString line = QString("%1s  |  %2")
-                               .arg(n.time, 0, 'f', 3)
-                               .arg(n.tag.isEmpty() ? QStringLiteral("Note") : n.tag);
+            if (!noteMatchesFilter(n, filter))
+                continue;
 
-            if (!n.detail.isEmpty()) {
-                QString snippet = n.detail;
-                snippet.replace('\n', ' ');
-                if (snippet.size() > 60)
-                    snippet = snippet.left(57) + "...";
-                line += "  |  " + snippet;
-            }
-
-            if (!filter.isEmpty()) {
-                QString haystack = n.tag + " " + n.detail;
-                if (!haystack.contains(filter, Qt::CaseInsensitive))
-                    continue;
-            }
-
-            QListWidgetItem* item = new QListWidgetItem(line, list);
-            item->setData(Qt::UserRole, i);  // store note index
+            QListWidgetItem* item = new QListWidgetItem(noteListLine(n), list);
+            item->setData(Qt::UserRole, i);
         }
     };
 
@@ -627,28 +641,14 @@ void ECGViewer::onShowNotesDialog()
     QObject::connect(searchEdit, &QLineEdit::textChanged,
                      &dlg, [refreshList]() { refreshList(); });
 
-    // New note at centre of current window
     QObject::connect(btnNew, &QPushButton::clicked,
                      &dlg, [this, refreshList]()
     {
-        double newTime = 0.5 * (currentX0 + currentX1);
-        if (newTime < 0.0) newTime = 0.0;
-        if (newTime > total_time_) newTime = total_time_;
+        double newTime = clampTime(0.5 * (currentX0 + currentX1));
+        int idx = createNoteAtTime(newTime);
 
-        double absTime = t_.first() + newTime;
-        int sampleIndex = static_cast<int>(std::round((absTime - t_.first()) * fs_));
-        if (sampleIndex < 0) sampleIndex = 0;
-        if (sampleIndex >= vClean_.size()) sampleIndex = vClean_.size() - 1;
-        double val = vClean_[sampleIndex];
-
-        Note n;
-        n.time = newTime;
-        n.volts = val;
-        n.tag = QStringLiteral("Note %1").arg(notes_.size() + 1);
-        notes_.push_back(n);
-
-        openNoteEditor(notes_.size() - 1);     // reuse existing editor
-        updateNoteItems(currentX0, currentX1); // redraw on plot
+        openNoteEditor(idx);
+        updateNoteItems(currentX0, currentX1);
         plot_->replot();
         refreshList();
     });
@@ -679,7 +679,7 @@ void ECGViewer::onShowNotesDialog()
         refreshList();
     });
 
-    QObject::connect(btnSave, &QPushButton::clicked, 
+    QObject::connect(btnSave, &QPushButton::clicked,
                      &dlg, [this]()
     {
         onSaveNotes(true);
@@ -695,7 +695,6 @@ void ECGViewer::onShowNotesDialog()
     QObject::connect(btnClose, &QPushButton::clicked,
                      &dlg, &QDialog::accept);
 
-    // Double-click list: jump to note + edit
     QObject::connect(list, &QListWidget::itemDoubleClicked,
                      &dlg, [this, list](QListWidgetItem* item)
     {
@@ -721,10 +720,8 @@ void ECGViewer::onShowNotesDialog()
         openNoteEditor(idx);
     });
 
-    // Initial populate
     refreshList();
-
-    dlg.exec();  // modal
+    dlg.exec();
 }
 
 } // namespace ECGViewer
