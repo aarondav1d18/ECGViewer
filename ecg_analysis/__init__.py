@@ -6,4 +6,4 @@ from .utils import (
     parse_ecg_file,
 )
 from .plotter import ECGViewer, ViewerConfig
-from .ecg_gui import ECGGuiApp
+from .gui.launcher import ECGQtLauncher
