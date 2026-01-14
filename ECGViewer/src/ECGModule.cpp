@@ -66,15 +66,15 @@ static void show_ecg_viewer(
     }
 
     auto pTimesQ = toQVector1D<double>(p_times, "p_times");
-    auto pValsQ  = toQVector1D<double>(p_vals,  "p_vals");
+    auto pValsQ  = toQVector1D<double>(p_vals, "p_vals");
     auto qTimesQ = toQVector1D<double>(q_times, "q_times");
-    auto qValsQ  = toQVector1D<double>(q_vals,  "q_vals");
+    auto qValsQ  = toQVector1D<double>(q_vals, "q_vals");
     auto rTimesQ = toQVector1D<double>(r_times, "r_times");
-    auto rValsQ  = toQVector1D<double>(r_vals,  "r_vals");
+    auto rValsQ  = toQVector1D<double>(r_vals, "r_vals");
     auto sTimesQ = toQVector1D<double>(s_times, "s_times");
-    auto sValsQ  = toQVector1D<double>(s_vals,  "s_vals");
+    auto sValsQ  = toQVector1D<double>(s_vals, "s_vals");
     auto tTimesQ = toQVector1D<double>(t_times, "t_times");
-    auto tValsQ  = toQVector1D<double>(t_vals,  "t_vals");
+    auto tValsQ  = toQVector1D<double>(t_vals, "t_vals");
 
     QString filePrefix;
     if (!file_prefix.is_none()) {

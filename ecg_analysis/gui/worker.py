@@ -45,6 +45,7 @@ class ECGWorker(QObject):
         """Runs in background thread. No Qt widgets here."""
         try:
             j = self.job
+            self.progress.emit("Worker started", 0)
 
             self.progress.emit("Parsing ECG file…", 5)
             t, v_raw, fs, meta = parse_ecg_file_cpp(j.file_path)

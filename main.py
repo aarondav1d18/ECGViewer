@@ -1,3 +1,4 @@
+#!/bin/python3
 # main.py
 from __future__ import annotations
 import sys

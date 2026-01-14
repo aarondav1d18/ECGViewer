@@ -91,7 +91,7 @@ def parse_ecg_file(path: str) -> tuple[np.ndarray, np.ndarray, float | None]:
         t_parts, v_parts = [], []
         for chunk in pd.read_csv(
             tmp.name,
-            delim_whitespace=True,
+            sep=r"\s+",
             header=None,
             names=["t", "v"],
             dtype={"t": "float64", "v": "float64"},

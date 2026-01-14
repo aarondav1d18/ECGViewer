@@ -10,6 +10,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(CMAKE_AUTOMOC ON)
 
+set(PYBIND11_FINDPYTHON ON)
 find_package(pybind11 REQUIRED)
 
 find_package(Qt5 COMPONENTS Core Widgets PrintSupport REQUIRED)
