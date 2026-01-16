@@ -1,3 +1,18 @@
+/**
+ * @file ECGViewerInteractions.cpp
+ * @brief Mouse/keyboard interaction handling for ECGViewer.
+ *
+ * This translation unit implements interactive behaviors on the plot:
+ * - Dragging fiducial markers (with resampling of cleaned Y values)
+ * - Dragging point notes and resizing/moving region notes
+ * - Shift+drag region creation
+ * - Hover detection and delete shortcuts
+ * - Double-click behavior for opening note editors
+ *
+ * The focus here is translating input events into updates on the backing data
+ * (notes_/fiducial vectors) and updating plot items for responsiveness.
+ */
+
 #include "ECGViewer.hpp"
 
 #include <QMouseEvent>
@@ -13,8 +28,9 @@ void ECGViewer::deleteHoveredFiducial()
 
     const auto f = fiducialsCurrent_[hoverFiducialIndex_];
 
-    QVector<double>& times = timesFor(f.type);
-    QVector<double>& vals  = valsFor(f.type);
+    auto r = fiducialRefsFor(f.type);
+    QVector<double>& times = *r.times;
+    QVector<double>& vals = *r.vals;
 
     if (f.index < 0 || f.index >= times.size())
         return;
@@ -66,11 +82,6 @@ void ECGViewer::onPlotMousePress(QMouseEvent* event)
 
     QCPAbstractItem* item = plot_->itemAt(event->pos(), true);
 
-    auto mouseTime = [this, event]() {
-        double x = plot_->xAxis->pixelToCoord(event->pos().x());
-        return clampTime(x);
-    };
-
     if (shiftHeld && item) {
         for (int i = 0; i < notesCurrent_.size(); ++i) {
             auto& nv = notesCurrent_[i];
@@ -104,7 +115,7 @@ void ECGViewer::onPlotMousePress(QMouseEvent* event)
             draggingNote_ = true;
             activeNoteVisualIndex_ = i;
 
-            regionPressTime_ = mouseTime();
+            regionPressTime_ = mouseTimeClamped(event);
             originalStart_ = t0;
             originalEnd_ = t1;
 
@@ -114,22 +125,20 @@ void ECGViewer::onPlotMousePress(QMouseEvent* event)
                 noteDragOffsetSeconds_ = 0.0;
             }
 
-            savedInteractions_ = plot_->interactions();
-            plot_->setInteraction(QCP::iRangeDrag, false);
-            setCursor(Qt::SizeHorCursor);
+            beginItemDrag(Qt::SizeHorCursor);
             return;
         }
     }
 
     if (shiftHeld && !item) {
-        double clickX = clampTime(plot_->xAxis->pixelToCoord(event->pos().x()));
+        double clickX = mouseTimeClamped(event);
 
         creatingRegion_ = true;
         regionAnchorTime_ = clickX;
 
         Note n;
         n.time = clickX;
-        const double eps = 1.0 / std::max(fs_, 1.0);
+        const double eps = minNoteDurationSeconds();
         n.duration = eps;
         n.tag = QStringLiteral("Region %1").arg(notes_.size() + 1);
         n.detail = QString();
@@ -146,9 +155,7 @@ void ECGViewer::onPlotMousePress(QMouseEvent* event)
             }
         }
 
-        savedInteractions_ = plot_->interactions();
-        plot_->setInteraction(QCP::iRangeDrag, false);
-        setCursor(Qt::CrossCursor);
+        beginItemDrag(Qt::CrossCursor);
 
         plot_->replot(QCustomPlot::rpQueuedReplot);
         noteDragMode_ = NoteDragMode::CreateRegion;
@@ -169,9 +176,7 @@ void ECGViewer::onPlotMousePress(QMouseEvent* event)
             const Note& note = notes_[nv.noteIndex];
             noteDragOffsetSeconds_ = note.time - clickX;
 
-            savedInteractions_ = plot_->interactions();
-            plot_->setInteraction(QCP::iRangeDrag, false);
-            setCursor(Qt::ClosedHandCursor);
+            beginItemDrag(Qt::ClosedHandCursor);
             return;
         }
     }
@@ -183,13 +188,11 @@ void ECGViewer::onPlotMousePress(QMouseEvent* event)
             activeFiducialIndex_ = i;
 
             double clickX = plot_->xAxis->pixelToCoord(event->pos().x());
-            double currentX = timesFor(f.type)[f.index];
+            auto r = fiducialRefsFor(f.type);
+            double currentX = (*r.times)[f.index];
             dragOffsetSeconds_ = currentX - clickX;
 
-            savedInteractions_ = plot_->interactions();
-            plot_->setInteraction(QCP::iRangeDrag, false);
-
-            setCursor(Qt::ClosedHandCursor);
+            beginItemDrag(Qt::ClosedHandCursor);
             return;
         }
     }
@@ -205,8 +208,8 @@ void ECGViewer::onPlotMouseMove(QMouseEvent* event)
     {
         Note& n = notes_[creatingNoteIndex_];
 
-        double mouseX = clampTime(plot_->xAxis->pixelToCoord(event->pos().x()));
-        const double eps = 1.0 / std::max(fs_, 1.0);
+        double mouseX = mouseTimeClamped(event);
+        const double eps = minNoteDurationSeconds();
 
         double t0 = std::min(regionAnchorTime_, mouseX);
         double t1 = std::max(regionAnchorTime_, mouseX);
@@ -256,8 +259,8 @@ void ECGViewer::onPlotMouseMove(QMouseEvent* event)
 
         Note& n = notes_[nv.noteIndex];
 
-        double mouseX = clampTime(plot_->xAxis->pixelToCoord(event->pos().x()));
-        const double eps = 1.0 / std::max(fs_, 1.0);
+        double mouseX = mouseTimeClamped(event);
+        const double eps = minNoteDurationSeconds();
 
         if (noteDragMode_ == NoteDragMode::CreateRegion)
         {
@@ -340,8 +343,8 @@ void ECGViewer::onPlotMouseMove(QMouseEvent* event)
         f.line->end->setCoords(newTime, yHigh);
         f.text->position->setCoords(newTime, yHigh);
 
-        QString label = fiducialLabel(f.type);
-        f.text->setText(QString("%1 @ %2s").arg(label).arg(newTime, 0, 'f', 5));
+        auto r = fiducialRefsFor(f.type);
+        f.text->setText(QString("%1 @ %2s").arg(r.label).arg(newTime, 0, 'f', 5));
 
         setCursor(Qt::ClosedHandCursor);
 
@@ -399,8 +402,9 @@ void ECGViewer::onPlotMouseMove(QMouseEvent* event)
  */
 void ECGViewer::updatePoint(FiducialVisual& f, double newTime)
 {
-    QVector<double>& times = timesFor(f.type);
-    QVector<double>& vals = valsFor(f.type);
+    auto r = fiducialRefsFor(f.type);
+    QVector<double>& times = *r.times;
+    QVector<double>& vals = *r.vals;
 
     if (f.index >= 0 && f.index < times.size()) {
         times[f.index] = newTime;
@@ -423,7 +427,7 @@ void ECGViewer::onPlotMouseRelease(QMouseEvent* event)
         if (creatingNoteIndex_ >= 0 && creatingNoteIndex_ < notes_.size()) {
             Note& n = notes_[creatingNoteIndex_];
 
-            const double minDur = 1.0 / std::max(fs_, 1.0);
+            const double minDur = minNoteDurationSeconds();
             if (n.duration < minDur) {
                 n.duration = 0.0;
             }
@@ -441,8 +445,7 @@ void ECGViewer::onPlotMouseRelease(QMouseEvent* event)
         activeNoteVisualIndex_ = -1;
         regionAnchorTime_ = 0.0;
 
-        setCursor(Qt::ArrowCursor);
-        plot_->setInteractions(savedInteractions_);
+        endItemDrag();
         noteDragMode_ = NoteDragMode::None;
         return;
     }
@@ -452,8 +455,7 @@ void ECGViewer::onPlotMouseRelease(QMouseEvent* event)
         activeNoteVisualIndex_ = -1;
         noteDragOffsetSeconds_ = 0.0;
 
-        setCursor(Qt::ArrowCursor);
-        plot_->setInteractions(savedInteractions_);
+        endItemDrag();
         plot_->replot();
 
         noteDragMode_ = NoteDragMode::None;
@@ -475,9 +477,8 @@ void ECGViewer::onPlotMouseRelease(QMouseEvent* event)
     draggingFiducial_ = false;
     activeFiducialIndex_ = -1;
     dragOffsetSeconds_ = 0.0;
-    setCursor(Qt::ArrowCursor);
 
-    plot_->setInteractions(savedInteractions_);
+    endItemDrag();
     plot_->replot();
 }
 

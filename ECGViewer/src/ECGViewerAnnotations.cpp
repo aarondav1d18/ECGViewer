@@ -1,3 +1,16 @@
+/**
+ * @file ECGViewerAnnotations.cpp
+ * @brief Note/annotation and fiducial editing utilities for ECGViewer.
+ *
+ * This translation unit contains the UI and persistence logic around annotations:
+ * - Creating/editing/deleting point notes and time regions (notes with duration)
+ * - Rendering/refreshing note visuals and list views
+ * - Saving/loading notes to/from JSON
+ * - Manual insertion of fiducial markers
+ *
+ * Core viewer plotting and mouse/keyboard interaction handling live in other files.
+ */
+
 #include "ECGViewer.hpp"
 
 #include <QString>
@@ -49,17 +62,6 @@ double ECGViewer::cleanValueAtTime(double relTime) const
     if (idx < 0) idx = 0;
     if (idx >= vClean_.size()) idx = vClean_.size() - 1;
     return vClean_[idx];
-}
-
-void ECGViewer::refreshFiducialGraph(FiducialType type)
-{
-    switch (type) {
-    case FiducialType::P: graphP_->setData(pTimes_, pVals_); break;
-    case FiducialType::Q: graphQ_->setData(qTimes_, qVals_); break;
-    case FiducialType::R: graphR_->setData(rTimes_, rVals_); break;
-    case FiducialType::S: graphS_->setData(sTimes_, sVals_); break;
-    case FiducialType::T: graphT_->setData(tTimes_, tVals_); break;
-    }
 }
 
 QString ECGViewer::fiducialLabel(FiducialType type) const
@@ -172,8 +174,9 @@ void ECGViewer::onInsertManualFiducial()
     double newTime = clampTime(0.5 * (currentX0 + currentX1));
     double newVal = cleanValueAtTime(newTime);
 
-    QVector<double>& times = timesFor(type);
-    QVector<double>& vals = valsFor(type);
+    auto r = fiducialRefsFor(type);
+    QVector<double>& times = *r.times;
+    QVector<double>& vals = *r.vals;
 
     int insertIndex = 0;
     while (insertIndex < times.size() && times[insertIndex] < newTime)
@@ -482,8 +485,9 @@ void ECGViewer::onSave()
     };
 
     for (const auto& type : types) {
-        QVector<double>& vals = valsFor(type);
-        QVector<double>& times = timesFor(type);
+        auto r = fiducialRefsFor(type);
+        QVector<double>& vals = *r.vals;
+        QVector<double>& times = *r.times;
 
         QChar tagChar = fiducialChar(type);
         for (int i = 0; i < times.size(); ++i) {

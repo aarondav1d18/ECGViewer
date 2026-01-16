@@ -1,3 +1,32 @@
+/**
+ * @file ECGViewer.hpp
+ * @brief Public interface and core state for the Qt-based ECGViewer.
+ *
+ * This header declares the ECGViewer main window class and its supporting
+ * data structures. ECGViewer is a stateful, interactive Qt widget for
+ * visualizing ECG time series with:
+ *
+ * - Windowed scrolling/zooming over time
+ * - Overlay of original vs cleaned signals
+ * - Fiducial markers (P/Q/R/S/T) with drag-to-edit support
+ * - Point notes and time-region notes with persistence
+ *
+ * Design notes:
+ * - The viewer owns all signal data (QVector copies) for lifetime safety.
+ * - Rendering is windowed and downsampled for responsiveness.
+ * - User interactions (mouse/keyboard) directly mutate backing vectors
+ *   and then update plot items incrementally.
+ * - Responsibilities are split across multiple translation units:
+ *     * Setup/UI wiring        -> ECGViewerSetup.cpp
+ *     * Plot/window updates    -> ECGViewerPlot.cpp
+ *     * Mouse/keyboard logic   -> ECGViewerInteractions.cpp
+ *     * Notes & persistence   -> ECGViewerAnnotations.cpp
+ *
+ * This header intentionally contains minimal inline documentation; detailed
+ * behavior is documented alongside implementations in the corresponding
+ * source files.
+ */
+
 #pragma once
 
 #include <QMainWindow>
@@ -9,8 +38,12 @@
 #include <QKeyEvent>
 #include <QMouseEvent>
 
+#include <stdexcept>
+
 #include "qcustomplot.h"
 
+// Forward declarations of Qt classes to reduce compile times
+// (full includes are in the corresponding .cpp files)
 class QCustomPlot;
 class QSlider;
 class QPushButton;
@@ -26,8 +59,8 @@ struct Note
 {
     QString tag;
     QString detail;
-    double time = 0;      // start time (s)
-    double duration = 0;  // seconds. 0 => point note, >0 => region note
+    double time = 0; // start time (s)
+    double duration = 0; // seconds. 0 => point note, >0 => region note
     double volts = 0;
 };
 
@@ -78,7 +111,6 @@ private:
 
     double clampTime(double t) const;
     double cleanValueAtTime(double relTime) const;
-    void refreshFiducialGraph(FiducialType type);
 
     QString fiducialLabel(FiducialType type) const;
     QChar fiducialChar(FiducialType type) const;
@@ -163,31 +195,57 @@ private:
     int  activeNoteVisualIndex_ = -1;
     double noteDragOffsetSeconds_ = 0.0;
 
-    // helpers to get the correct vecs from a type
-    inline QVector<double>& timesFor(FiducialType type)
+    struct FiducialRefs
+    {
+        QVector<double>* times = nullptr;
+        QVector<double>* vals = nullptr;
+        QCPGraph* graph = nullptr;
+        QString label;
+        QChar ch = '?';
+    };
+
+    // helpers to get the correct vecs/graph/label from a type
+    inline FiducialRefs fiducialRefsFor(FiducialType type)
     {
         switch (type) {
-        case FiducialType::P: return pTimes_;
-        case FiducialType::Q: return qTimes_;
-        case FiducialType::R: return rTimes_;
-        case FiducialType::S: return sTimes_;
-        case FiducialType::T: return tTimes_;
+        case FiducialType::P: return FiducialRefs{ &pTimes_, &pVals_, graphP_, "P", 'P' };
+        case FiducialType::Q: return FiducialRefs{ &qTimes_, &qVals_, graphQ_, "Q", 'Q' };
+        case FiducialType::R: return FiducialRefs{ &rTimes_, &rVals_, graphR_, "R", 'R' };
+        case FiducialType::S: return FiducialRefs{ &sTimes_, &sVals_, graphS_, "S", 'S' };
+        case FiducialType::T: return FiducialRefs{ &tTimes_, &tVals_, graphT_, "T", 'T' };
         }
-
-        throw std::runtime_error("Invalid FiducialType in timesFor()");
+        throw std::runtime_error("Invalid FiducialType");
     }
 
-    inline QVector<double>& valsFor(FiducialType type)
+    inline void refreshFiducialGraph(FiducialType type)
     {
-        switch (type) {
-        case FiducialType::P: return pVals_;
-        case FiducialType::Q: return qVals_;
-        case FiducialType::R: return rVals_;
-        case FiducialType::S: return sVals_;
-        case FiducialType::T: return tVals_;
-        }
+        auto r = fiducialRefsFor(type);
+        if (!r.graph || !r.times || !r.vals)
+            return;
+        r.graph->setData(*r.times, *r.vals);
+    }
 
-        throw std::runtime_error("Invalid FiducialType in valsFor()");
+    inline double minNoteDurationSeconds() const
+    {
+        return 1.0 / std::max(fs_, 1.0);
+    }
+
+    inline double mouseTimeClamped(const QMouseEvent* event) const
+    {
+        return clampTime(plot_->xAxis->pixelToCoord(event->pos().x()));
+    }
+
+    inline void beginItemDrag(Qt::CursorShape cursor)
+    {
+        savedInteractions_ = plot_->interactions();
+        plot_->setInteraction(QCP::iRangeDrag, false);
+        setCursor(cursor);
+    }
+
+    inline void endItemDrag()
+    {
+        setCursor(Qt::ArrowCursor);
+        plot_->setInteractions(savedInteractions_);
     }
 
     QCP::Interactions savedInteractions_;

@@ -1,4 +1,33 @@
-// ParseECG.cpp (condensed, same behavior)
+/**
+ * @file ParseECG.cpp
+ * @brief Fast ECG text parser exposed to Python via pybind11.
+ *
+ * This module parses LabChart-style (and similar) ECG text exports containing a small
+ * header section and numeric rows.
+ *
+ * Expected input format:
+ * - Optional header lines like:
+ *     Interval=<seconds>
+ *     ChannelTitle=<text>
+ *     Range=<text>
+ * - Data lines: two whitespace-separated floating point values:
+ *     <time_seconds> <voltage>
+ *
+ * Parsing behavior:
+ * - Skips whitespace.
+ * - Recognizes the known header keys above.
+ * - Skips other header-ish lines quickly when they contain '=' early in the line.
+ * - For numeric data, reads the first two floats on a line and ignores the rest.
+ * - If no numeric rows are found, throws.
+ *
+ * Outputs:
+ * - t: time vector (double)
+ * - v: voltage vector (double)
+ * - fs: sampling frequency (Hz) if inferable, else None
+ *   - fs is computed from Interval= if present and > 0.
+ *   - otherwise inferred as 1 / median(dt) from the time column.
+ * - meta: dict with interval_s, channel_title, range when present.
+ */
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
 
@@ -60,6 +89,12 @@ static inline bool starts_with(const char *p, const char *end, const char *lit) 
     return static_cast<std::size_t>(end - p) >= n && std::memcmp(p, lit, n) == 0;
 }
 
+/**
+ * @brief Fast 10^e for small integer exponents.
+ *
+ * This avoids std::pow for common small exponents (both positive and negative),
+ * which is a hot path when parsing many floats with fractional digits/exponents.
+ */
 static inline double pow10_i(int e) {
     static const double pos[] = {
         1e0,  1e1,  1e2,  1e3,  1e4,  1e5,  1e6,  1e7,  1e8,  1e9,
@@ -82,6 +117,30 @@ static inline double pow10_i(int e) {
     return std::pow(10.0, static_cast<double>(e));
 }
 
+/**
+ * @brief Parse a floating-point number from a char buffer.
+ *
+ * Accepts:
+ * - optional leading whitespace
+ * - optional sign
+ * - integer digits
+ * - optional fractional part
+ * - optional exponent (e/E with optional sign)
+ *
+ * On success:
+ * - writes the parsed value to @p out
+ * - sets @p next to the first unconsumed character
+ * - returns true
+ *
+ * On failure:
+ * - returns false (caller typically skips to end-of-line and continues)
+ *
+ * Notes:
+ * - This is intentionally a permissive, allocation-free parser for speed.
+ * - Fractional precision is capped (keeps up to 18 fractional digits) to avoid
+ *   overflow in the integer accumulator. Which is sufficient for double precision and
+ *   more than accurate enough for the precision of ECG data.
+ */
 static inline bool parse_double(const char *p, const char *end, double &out, const char *&next) {
     p = skip_spaces(p, end);
     if (p >= end) return false;
@@ -160,6 +219,12 @@ static inline bool parse_double(const char *p, const char *end, double &out, con
     return true;
 }
 
+/**
+ * @brief Compute the median of a vector in-place.
+ *
+ * Uses std::nth_element and may reorder elements.
+ * Returns 0.0 for an empty vector.
+ */
 static double median_in_place(std::vector<double> &v) {
     std::size_t n = v.size();
     if (n == 0) return 0.0;
@@ -173,6 +238,13 @@ static double median_in_place(std::vector<double> &v) {
     return 0.5 * (m + *max_it);
 }
 
+
+/**
+ * @brief Read the remainder of the current line as trimmed text.
+ *
+ * Skips leading whitespace, stops at newline, and trims trailing whitespace.
+ * Returns nullopt if the line is empty after trimming.
+ */
 static inline std::optional<std::string> read_trimmed_eol_text(const char *&p, const char *end) {
     p = skip_spaces(p, end);
     const char *s = p;
@@ -185,6 +257,18 @@ static inline std::optional<std::string> read_trimmed_eol_text(const char *&p, c
     return std::string(s, e);
 }
 
+/**
+ * @brief Parse ECG content already loaded into memory.
+ *
+ * Reads line-by-line from a raw buffer. Header fields populate EcgMeta.
+ * Numeric rows append to t and v.
+ *
+ * Sampling frequency (fs) inference:
+ * - If Interval= is present and > 0, fs = 1 / interval.
+ * - Else, if at least 2 timestamps exist, compute dt series and use fs = 1 / median(dt).
+ *
+ * Throws std::runtime_error if no numeric rows are found.
+ */
 static EcgData parse_ecg_bytes(const char *buf, std::size_t len) {
     EcgData result;
 
@@ -277,6 +361,16 @@ static EcgData parse_ecg_bytes(const char *buf, std::size_t len) {
     return result;
 }
 
+
+/**
+ * @brief Parse an ECG file from disk (native C++).
+ *
+ * Uses memory-mapped IO on Unix/macOS and Windows to avoid an extra copy and reduce
+ * peak memory usage. Falls back to reading the file into a std::string buffer on
+ * other platforms.
+ *
+ * Throws std::runtime_error on IO errors, empty files, or parse failures.
+ */
 static EcgData parse_ecg_file_cpp(const std::string &path) {
 #if defined(__unix__) || defined(__APPLE__)
     int fd = ::open(path.c_str(), O_RDONLY);
@@ -395,6 +489,10 @@ static EcgData parse_ecg_file_cpp(const std::string &path) {
     return parse_ecg_bytes(buf.data(), buf.size());
 #endif
 }
+
+/**
+ * @brief Convert optional<double> to a Python object (float or None).
+ */
 static py::object opt_to_py(const std::optional<double> &v) {
     if (v) {
         return py::float_(*v);
@@ -402,6 +500,9 @@ static py::object opt_to_py(const std::optional<double> &v) {
     return py::none();
 }
 
+/**
+ * @brief Convert optional<string> to a Python object (str or None).
+ */
 static py::object opt_to_py(const std::optional<std::string> &v) {
     if (v) {
         return py::str(*v);
@@ -409,7 +510,17 @@ static py::object opt_to_py(const std::optional<std::string> &v) {
     return py::none();
 }
 
-
+/**
+ * @brief Python-facing wrapper around parse_ecg_file_cpp.
+ *
+ * Behavior:
+ * - Releases the Python GIL while performing file IO + parsing.
+ * - Returns numpy float64 arrays backed by std::vector<double> owned by capsules.
+ *   This avoids copying into a new NumPy allocation.
+ *
+ * Return value:
+ *   (t_arr, v_arr, fs_or_None, meta_dict)
+ */
 static py::tuple parse_ecg_file_py(const std::string &path) {
     EcgData data = [&]() {
         py::gil_scoped_release release;

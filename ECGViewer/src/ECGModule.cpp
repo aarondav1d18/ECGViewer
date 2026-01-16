@@ -1,3 +1,20 @@
+/**
+ * @file ECGModule.cpp
+ * @brief Pybind11 bridge for launching the Qt ECG viewer from Python.
+ *
+ * Exposes a single function `show_ecg_viewer(...)` that:
+ * - Validates array shapes (expects 1D arrays).
+ * - Copies NumPy arrays into QVector for Qt/QCustomPlot usage.
+ * - Reuses an existing QApplication if one already exists (common in Python Qt apps),
+ *   otherwise creates a local QApplication and runs the event loop.
+ *
+ * The viewer supports:
+ * - Original vs cleaned traces, optional artifact hiding
+ * - Artifact mask overlay behavior (viewer-side)
+ * - Optional fixed y-limits
+ * - Fiducial point overlays (P/Q/R/S/T time/value pairs)
+ * - File prefix used for saving exported data/notes from the UI
+ */
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
 
@@ -7,6 +24,14 @@
 
 namespace py = pybind11;
 
+/**
+ * @brief Convert a 1D NumPy array into a QVector<T>.
+ *
+ * This performs a copy because Qt containers/widgets expect ownership/lifetime
+ * independent of the Python buffer.
+ *
+ * @throws std::runtime_error if the input array is not 1D.
+ */
 template<typename T>
 static QVector<T> toQVector1D(py::array_t<T, py::array::c_style | py::array::forcecast> arr,
                               const char* name)
@@ -22,6 +47,34 @@ static QVector<T> toQVector1D(py::array_t<T, py::array::c_style | py::array::for
     return v;
 }
 
+struct FidPair
+{
+    QVector<double> times;
+    QVector<double> vals;
+};
+
+/**
+ * @brief Launch the ECG viewer window.
+ *
+ * Inputs:
+ * - t: time array (seconds, 1D)
+ * - v_orig: original ECG samples aligned with t
+ * - v_clean: cleaned ECG samples aligned with t
+ * - art_mask: 0/1 style byte mask aligned with t
+ * - fs: sampling rate (Hz)
+ * - window_s: initial visible window length (seconds)
+ * - ylim: optional (ymin, ymax) tuple/list or None
+ * - hide_artifacts: whether to hide the original trace in the UI
+ * - p/q/r/s/t_times + p/q/r/s/t_vals: fiducial marker series (may be empty)
+ * - file_prefix: base name for output files saved from the UI
+ *
+ * Notes:
+ * - If no QApplication exists, one is created and exec() is called.
+ *   If a QApplication already exists, this function simply shows the viewer.
+ * - Will need to add logic that adds ability to keep the file selection gui open
+ *   and allow multiple viewers to be opened from Python if desired.
+ *   Can use a tick box for this option in the gui that launchers the viewer.
+ */
 static void show_ecg_viewer(
     py::array_t<double> t,
     py::array_t<double> v_orig,
@@ -65,16 +118,24 @@ static void show_ecg_viewer(
         has_ylim = true;
     }
 
-    auto pTimesQ = toQVector1D<double>(p_times, "p_times");
-    auto pValsQ  = toQVector1D<double>(p_vals, "p_vals");
-    auto qTimesQ = toQVector1D<double>(q_times, "q_times");
-    auto qValsQ  = toQVector1D<double>(q_vals, "q_vals");
-    auto rTimesQ = toQVector1D<double>(r_times, "r_times");
-    auto rValsQ  = toQVector1D<double>(r_vals, "r_vals");
-    auto sTimesQ = toQVector1D<double>(s_times, "s_times");
-    auto sValsQ  = toQVector1D<double>(s_vals, "s_vals");
-    auto tTimesQ = toQVector1D<double>(t_times, "t_times");
-    auto tValsQ  = toQVector1D<double>(t_vals, "t_vals");
+    auto loadPair = [&](py::array_t<double> timesArr,
+                        py::array_t<double> valsArr,
+                        const char* name) -> FidPair
+    {
+        FidPair out;
+        out.times = toQVector1D<double>(timesArr, (std::string(name) + "_times").c_str());
+        out.vals = toQVector1D<double>(valsArr, (std::string(name) + "_vals").c_str());
+        if (out.times.size() != out.vals.size()) {
+            throw std::runtime_error(std::string("times/vals size mismatch for ") + name);
+        }
+        return out;
+    };
+
+    auto P = loadPair(p_times, p_vals, "P");
+    auto Q = loadPair(q_times, q_vals, "Q");
+    auto R = loadPair(r_times, r_vals, "R");
+    auto S = loadPair(s_times, s_vals, "S");
+    auto T = loadPair(t_times, t_vals, "T");
 
     QString filePrefix;
     if (!file_prefix.is_none()) {
@@ -82,23 +143,6 @@ static void show_ecg_viewer(
     } else {
         filePrefix = QStringLiteral("ecg_data");
     }
-
-    // simple length checks: allow zero-length for "no points"
-    auto checkPair = [](const QVector<double>& a,
-                        const QVector<double>& b,
-                        const char* name)
-    {
-        if (a.size() != b.size()) {
-            throw std::runtime_error(
-                std::string("times/vals size mismatch for ") + name
-            );
-        }
-    };
-    checkPair(pTimesQ, pValsQ, "P");
-    checkPair(qTimesQ, qValsQ, "Q");
-    checkPair(rTimesQ, rValsQ, "R");
-    checkPair(sTimesQ, sValsQ, "S");
-    checkPair(tTimesQ, tValsQ, "T");
 
     // Reuse existing QApplication if present (Python-level Qt launcher),
     // otherwise create our own and run its event loop.
@@ -125,11 +169,11 @@ static void show_ecg_viewer(
         ymin,
         ymax,
         hide_artifacts,
-        pTimesQ, pValsQ,
-        qTimesQ, qValsQ,
-        rTimesQ, rValsQ,
-        sTimesQ, sValsQ,
-        tTimesQ, tValsQ,
+        P.times, P.vals,
+        Q.times, Q.vals,
+        R.times, R.vals,
+        S.times, S.vals,
+        T.times, T.vals,
         filePrefix
     );
 
@@ -143,7 +187,6 @@ static void show_ecg_viewer(
         // delete app;
     }
 }
-
 
 PYBIND11_MODULE(ECGViewer, m)
 {

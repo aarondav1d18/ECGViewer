@@ -1,3 +1,16 @@
+/**
+ * @file ECGViewerSetup.cpp
+ * @brief ECGViewer construction, UI layout, and signal/slot wiring.
+ *
+ * This translation unit builds the main window and connects UI controls:
+ * - QCustomPlot initialization and graph setup (clean/original + fiducial scatters)
+ * - Traversal controls (slider, zoom controls, reset, rect zoom toggle, save, notes)
+ * - Manual fiducial insertion controls
+ * - Axis range clamping logic that maps view ranges back to slider positions
+ *
+ * Per-feature behavior is implemented in the corresponding interaction/plot/annotation files.
+ */
+
 #include "ECGViewer.hpp"
 
 #include <QVBoxLayout>

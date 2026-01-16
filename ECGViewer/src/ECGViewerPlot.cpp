@@ -1,3 +1,17 @@
+/**
+ * @file ECGViewerPlot.cpp
+ * @brief Windowed plotting and item rebuilds for ECGViewer.
+ *
+ * This translation unit is responsible for drawing and refreshing the visible view:
+ * - Updating the displayed ECG window (including downsampling for responsiveness)
+ * - Toggling original vs cleaned traces depending on hide_artifacts_
+ * - Rebuilding fiducial line/text items for the current x-range
+ * - Rebuilding note visuals (point notes vs region rectangles)
+ * - Managing window length changes and slider-driven navigation helpers
+ *
+ * Input events and UI wiring are implemented elsewhere.
+ */
+
 #include "ECGViewer.hpp"
 
 #include <algorithm>
