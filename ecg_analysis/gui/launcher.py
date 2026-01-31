@@ -6,8 +6,8 @@ from PyQt5.QtGui import QKeySequence
 
 from .launcher_layout import LauncherLayoutMixin
 from .launcher_help import LauncherHelpMixin
-from .launcher_styles import LauncherStyleMixin
 from .launcher_worker import LauncherWorkerMixin
+from .launcher_styles import LauncherStyleMixin
 
 
 class ECGQtLauncher(

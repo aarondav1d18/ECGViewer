@@ -3,20 +3,25 @@ from dataclasses import dataclass
 from typing import Optional, Tuple
 
 from PyQt5.QtCore import QObject, pyqtSignal
-from ECGViewer import parse_ecg_file_cpp as parse_ecg_file_cpp
+try:
+    from ECGViewer import parse_ecg_file_cpp as parse_ecg_file
+except ImportError:
+    from ecg_analysis import parse_ecg_file
 from ecg_analysis import detrend_and_filter, detect_artifacts, clean_with_noise, detect_fiducials
 
-'''
-This class was implemented to handle ECG file processing in a background thread to prevent GUI 
-freezing. It defines an ECGWorker that processes the ECG file, detrends and filters the signal,
-and emits progress updates, completion signals, or error messages as needed.
-Again this is just due to an issue I had with loading really large ECG files where it would make the
-GUI freeze and then my os would think the application was not responding and that pop-up would 
-appear.
-'''
 
 @dataclass
 class ECGJobConfig:
+    """
+    Configuration for a background ECG processing job.
+
+    Attributes:
+        file_path: Path to the ECG text file to parse.
+        window: Viewer window width (seconds) requested by the user/UI.
+        ylim: Optional y-axis limits as (ymin, ymax).
+        hide_artifacts: Whether the viewer should hide artifact regions/markers.
+        bandpass: If True, apply a bandpass filter in preprocessing (if supported).
+    """
     file_path: str
     window: float
     ylim: Optional[Tuple[float, float]]
@@ -25,6 +30,16 @@ class ECGJobConfig:
 
 
 class ECGWorker(QObject):
+    """Background worker that parses and preprocesses an ECG file.
+
+    Intended to be run in a `QThread` to prevent GUI freezes when loading large files.
+    Emits progress updates, a result dictionary on success, or an error string on failure.
+
+    Signals:
+        finished: Emits a result dict on success.
+        error: Emits an error message string on failure (including user cancel).
+        progress: Emits (message, percent) updates during processing.
+    """
     finished = pyqtSignal(object) # emits result dict on success
     error = pyqtSignal(str) # emits error message
     progress = pyqtSignal(str, int) # (message, percentage)
@@ -42,13 +57,13 @@ class ECGWorker(QObject):
             raise RuntimeError("Processing cancelled by user.")
 
     def run(self) -> None:
-        """Runs in background thread. No Qt widgets here."""
+        """Execute the job logic (intended to run in a background thread)."""
         try:
             j = self.job
             self.progress.emit("Worker started", 0)
 
             self.progress.emit("Parsing ECG file…", 5)
-            t, v_raw, fs, meta = parse_ecg_file_cpp(j.file_path)
+            t, v_raw, fs, meta = parse_ecg_file(j.file_path)
             self._check_cancel()
 
             if fs is None:

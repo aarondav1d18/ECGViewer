@@ -86,7 +86,7 @@ class LauncherLayoutMixin:
 
         file_label = QLabel("File:")
         self.file_edit = QLineEdit(file_group)
-        self.file_edit.setPlaceholderText("Select a .txt or .csv ECG file...")
+        self.file_edit.setPlaceholderText("Select a .txt ECG file...")
         self.browse_btn = QPushButton("Browse…", file_group)
 
         file_row.addWidget(file_label)
@@ -95,7 +95,7 @@ class LauncherLayoutMixin:
 
         file_group_layout.addLayout(file_row)
 
-        self.file_hint = QLabel("Only text or CSV ECG exports are supported.")
+        self.file_hint = QLabel("Only text ECG exports are supported.")
         self.file_hint.setStyleSheet("color: #888888; font-size: 10px;")
         file_group_layout.addWidget(self.file_hint)
 

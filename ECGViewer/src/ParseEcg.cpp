@@ -400,76 +400,8 @@ static EcgData parse_ecg_file_cpp(const std::string &path) {
         ::munmap(map, len);
         throw;
     }
-#elif defined(_WIN32)
-    // Convert UTF-8 std::string -> UTF-16 for Win32 wide APIs
-    int wlen = MultiByteToWideChar(CP_UTF8, 0, path.c_str(), -1, nullptr, 0);
-    if (wlen <= 0) {
-        throw std::runtime_error("Invalid UTF-8 path.");
-    }
-
-    std::wstring wpath;
-    wpath.resize(static_cast<std::size_t>(wlen - 1));
-    MultiByteToWideChar(CP_UTF8, 0, path.c_str(), -1, &wpath[0], wlen);
-
-    HANDLE hFile = CreateFileW(
-        wpath.c_str(),
-        GENERIC_READ,
-        FILE_SHARE_READ,
-        nullptr,
-        OPEN_EXISTING,
-        FILE_ATTRIBUTE_NORMAL,
-        nullptr
-    );
-    if (hFile == INVALID_HANDLE_VALUE) {
-        throw std::runtime_error("Could not open ECG file: " + path);
-    }
-
-    LARGE_INTEGER size;
-    if (!GetFileSizeEx(hFile, &size)) {
-        CloseHandle(hFile);
-        throw std::runtime_error("Could not stat ECG file: " + path);
-    }
-
-    if (size.QuadPart <= 0) {
-        CloseHandle(hFile);
-        throw std::runtime_error("ECG file is empty: " + path);
-    }
-
-    if (size.QuadPart > static_cast<LONGLONG>(std::numeric_limits<std::size_t>::max())) {
-        CloseHandle(hFile);
-        throw std::runtime_error("ECG file too large to map in this build: " + path);
-    }
-
-    std::size_t len = static_cast<std::size_t>(size.QuadPart);
-
-    HANDLE hMap = CreateFileMappingW(hFile, nullptr, PAGE_READONLY, 0, 0, nullptr);
-    if (!hMap) {
-        CloseHandle(hFile);
-        throw std::runtime_error("CreateFileMapping failed for ECG file: " + path);
-    }
-
-    void *view = MapViewOfFile(hMap, FILE_MAP_READ, 0, 0, 0);
-    if (!view) {
-        CloseHandle(hMap);
-        CloseHandle(hFile);
-        throw std::runtime_error("MapViewOfFile failed for ECG file: " + path);
-    }
-
-    try {
-        EcgData data = parse_ecg_bytes(static_cast<const char *>(view), len);
-        UnmapViewOfFile(view);
-        CloseHandle(hMap);
-        CloseHandle(hFile);
-        return data;
-    } catch (...) {
-        UnmapViewOfFile(view);
-        CloseHandle(hMap);
-        CloseHandle(hFile);
-        throw;
-    }
-
 #else
-    // Fallback (non-unix): read file into memory, then parse.
+    // Fallback read file into memory, then parse.
     std::ifstream f(path, std::ios::binary);
     if (!f.is_open()) {
         throw std::runtime_error("Could not open ECG file: " + path);

@@ -11,6 +11,7 @@ from dataclasses import dataclass
 class BeatFeatures:
     r_time: float
     r_idx: int
+    rr_intervals: float | None = None
     q_time: float | None = None
     q_idx: int | None = None
     s_time: float | None = None
@@ -21,9 +22,8 @@ class BeatFeatures:
     t_idx: int | None = None
 
 def parse_ecg_file(path: str) -> tuple[np.ndarray, np.ndarray, float | None]:
-    # Deprecated but kept for backward compatibility and testing against C++
-    # version
     '''
+    Fallback parser for ECG text files if C++ extension is unavailable.
     Parse an ECG text file into time, voltage, and sampling frequency.
     Reads only numeric two-column lines, ignoring headers such as
     "Interval=" or "ExcelDateTime=". If "Interval=" is found, fs = 1 / Interval.
@@ -91,7 +91,7 @@ def parse_ecg_file(path: str) -> tuple[np.ndarray, np.ndarray, float | None]:
         t_parts, v_parts = [], []
         for chunk in pd.read_csv(
             tmp.name,
-            sep=r"\s+",
+            delim_whitespace=True,
             header=None,
             names=["t", "v"],
             dtype={"t": "float64", "v": "float64"},
@@ -320,7 +320,6 @@ def clean_with_noise(t: np.ndarray, y: np.ndarray, art_times: np.ndarray, fs: fl
     # Precompute derivative once
     dv = np.diff(y_out, prepend=y_out[0])
 
-    # ---- 1) Precompute local stats with uniform filter (O(N)) ----
     win_loc = max(3, 2 * k_neighbor)  # ensure odd-ish, non-zero
 
     # local mean of y and dv
@@ -334,7 +333,7 @@ def clean_with_noise(t: np.ndarray, y: np.ndarray, art_times: np.ndarray, fs: fl
     std_y = np.sqrt(np.maximum(mean_y2 - mean_y**2, 0.0)) + 1e-6
     std_dv = np.sqrt(np.maximum(mean_dv2 - mean_dv**2, 0.0)) + 1e-6
 
-    # ---- 2) Cache tapers by length to avoid repeated linspace/cos ----
+    # Cache tapers by length to avoid repeated linspace/cos 
     taper_cache: dict[int, np.ndarray] = {}
 
     def get_taper(L: int) -> np.ndarray:
@@ -420,7 +419,6 @@ def clean_with_noise(t: np.ndarray, y: np.ndarray, art_times: np.ndarray, fs: fl
         y_out[s:e] = (1.0 - w) * seg + w * replacement
 
     return y_out
-
 
 def bandpass_qrs(v: np.ndarray, fs: float) -> np.ndarray:
     '''
@@ -620,15 +618,15 @@ def detect_fiducials(
         containing indices/times of P, Q, R, S, and T when available.
     """
 
-    qrs_half = int(0.06 * fs)          # +-60 ms for Q and S around R
-    p_min = int(0.08 * fs)             # 80 ms
-    p_max = int(0.25 * fs)             # 250 ms
-    r_ref_span = int(0.02 * fs)        # refine R within +-20 ms
-    t_margin_after_S = int(0.06 * fs)  # start T >=60 ms after S
+    qrs_half = int(0.06 * fs) # +-60 ms for Q and S around R
+    p_min = int(0.08 * fs) # 80 ms
+    p_max = int(0.25 * fs) # 250 ms
+    r_ref_span = int(0.02 * fs) # refine R within +-20 ms
+    t_margin_after_S = int(0.06 * fs) # start T >=60 ms after S
     t_margin_before_Q = int(0.04 * fs) # end T <=40 ms before next Q
-    t_last_start = int(0.12 * fs)      # fallback T window for last beat
-    t_last_end = int(0.60 * fs)        # fallback T window for last beat
-    noise_gap = int(0.01 * fs)         # 10 ms around artifact indices
+    t_last_start = int(0.12 * fs) # fallback T window for last beat
+    t_last_end = int(0.60 * fs) # fallback T window for last beat
+    noise_gap = int(0.01 * fs) # 10 ms around artifact indices
 
     # artifact indices (for P/T rejection)
     art_idx_all: np.ndarray | None = None
@@ -686,6 +684,23 @@ def detect_fiducials(
                     bf.p_time = float(t[p_local])
 
         beats.append(bf)
+
+    # rr intervals
+    r_times = np.array([b.r_time for b in beats])
+    rr_interval = np.diff(r_times) * 1000.0 # milliseconds
+
+    for i,b in enumerate(beats[:-1]):
+        b.rr_interval = rr_interval[i]
+
+    if len(beats) > 0:
+        beats[-1].rr_interval = None
+
+    # temp visualisation
+    for i, b in enumerate(beats):
+        if b.rr_interval is not None:
+            print(f"Beat {i}: RR = {b.rr_interval:.2f} ms")
+        else:
+            print(f"Beat {i}: RR = None (last beat)")
 
     # second pass: find T BETWEEN S_i and Q_{i+1}
     for i, bf in enumerate(beats):

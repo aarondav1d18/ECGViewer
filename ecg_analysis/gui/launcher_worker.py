@@ -12,6 +12,7 @@ import os
 from typing import Optional, Tuple
 
 from PyQt5.QtCore import Qt, QThread, QFileInfo
+from PyQt5.QtCore import QTimer
 from PyQt5.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -25,19 +26,23 @@ from ecg_analysis.plotter import ViewerConfig, ECGViewer
 
 class LauncherWorkerMixin:
     """
-    Mixin with:
-      - file browse
-      - validation
-      - background ECGWorker handling
-      - progress dialog callbacks
+    Mixin providing file selection, validation, and worker-driven viewer launch.
+
+    Responsibilities:
+        - Wire basic UI signals (browse, run, close).
+        - Validate user input (file path, extension, y-limits).
+        - Run `ECGWorker` in a `QThread` with a `QProgressDialog`.
+        - On success, create and show an `ECGViewer` configured from UI values.
     """
 
     _thread: QThread | None = None
     _worker: ECGWorker | None = None
     _progress: QProgressDialog | None = None
+    hide_gui: bool = True
 
     # simple UI event handlers 
     def _connect_basic_signals(self) -> None:
+        """Connect the mixin's UI controls to handlers."""
         self.browse_btn.clicked.connect(self.on_browse_file)
         self.file_edit.textChanged.connect(self.on_file_text_changed)
         self.run_button.clicked.connect(self.on_run_clicked)
@@ -45,16 +50,18 @@ class LauncherWorkerMixin:
         self.file_edit.returnPressed.connect(self.on_run_clicked)
 
     def on_browse_file(self) -> None:
+        """Open a file dialog and populate the file path input."""
         path, _ = QFileDialog.getOpenFileName(
             self,
             "Select ECG text file",
             "",
-            "ECG files (*.txt *.csv);;All files (*)",
+            "ECG files (*.txt);;All files (*)",
         )
         if path:
             self.file_edit.setText(path)
 
     def on_file_text_changed(self, text: str) -> None:
+        """Update UI state based on whether a valid-looking path is present."""
         text = text.strip()
         if text:
             base = os.path.basename(text)
@@ -68,6 +75,7 @@ class LauncherWorkerMixin:
 
     # run button + worker setup 
     def on_run_clicked(self) -> None:
+        """Validate inputs, create an `ECGJobConfig`, and start the worker thread."""
         file_path = self.file_edit.text().strip()
 
         if not file_path:
@@ -75,11 +83,11 @@ class LauncherWorkerMixin:
             return
 
         ext = os.path.splitext(file_path)[1].lower()
-        if ext not in (".txt", ".csv"):
+        if ext not in (".txt"):
             QMessageBox.critical(
                 self,
                 "Invalid file",
-                "Please select a .txt or .csv file.",
+                "Please select a .txt file.",
             )
             return
 
@@ -167,13 +175,15 @@ class LauncherWorkerMixin:
         self._worker = worker
         thread.start()
 
-    # ------------ worker callbacks ----------------
+    # worker callbacks 
     def _on_thread_finished(self) -> None:
+        """Cleanup references and restore cursor when the worker thread ends."""
         self._thread = None
         self._worker = None
         QApplication.restoreOverrideCursor()
 
     def _on_worker_progress(self, message: str, percent: int) -> None:
+        """Update the progress dialog with a message and percentage."""
         if self._progress is None:
             return
         self._progress.setLabelText(message)
@@ -181,12 +191,14 @@ class LauncherWorkerMixin:
         QApplication.processEvents()
 
     def _on_progress_canceled(self) -> None:
+        """Handle progress dialog cancellation by requesting worker cancel."""
         if self._worker is not None:
             self._worker.request_cancel()
         if self._progress is not None:
             self._progress.setLabelText("Cancelling…")
 
     def _on_worker_error(self, msg: str) -> None:
+        """Handle worker failure: restore UI state and show an error dialog."""
         self.status_label.setText("Error while processing ECG.")
         self.run_button.setEnabled(True)
         self.file_edit.setEnabled(True)
@@ -200,6 +212,7 @@ class LauncherWorkerMixin:
         QMessageBox.critical(self, "Error running viewer", msg)
 
     def _on_worker_finished(self, result: dict) -> None:
+        """Handle worker success: build and show the ECG viewer, then restore UI state."""
         if self._progress is not None:
             self._progress.setLabelText("Building ECG viewer…")
             self._progress.setValue(70)
@@ -226,7 +239,6 @@ class LauncherWorkerMixin:
         )
 
         viewer = ECGViewer(t, v, fs, cfg, file_prefix=file_prefix)
-
         if self._progress is not None:
             self._progress.setLabelText("Done.")
             self._progress.setValue(100)
@@ -239,9 +251,8 @@ class LauncherWorkerMixin:
         self.run_button.setEnabled(True)
         self.file_edit.setEnabled(True)
         self.status_label.setText("Viewer opened.")
+        if self.hide_gui:
+            self.hide()
+            QApplication.processEvents()
+            QTimer.singleShot(0, self.close)
         viewer.show()
-
-        # One-shot launcher: close after opening viewer
-        # Could comment out to keep launcher open so if they want to open more files. I just have
-        # it close as I dont open multiple at a time rn.
-        self.close()
