@@ -1,15 +1,37 @@
 # ECG Project
 
+## License
+
+This project is licensed under the GNU General Public License v3.0 or later.
+See the LICENSE file for full license terms.
+
+---
+
+## Third-Party GPL Components
+
+This project makes use of **QCustomPlot**, which is licensed under the GNU
+General Public License (GPL).
+
+QCustomPlot is used within the ECGViewer application for plotting and
+visualisation functionality.
+
+---
+
+## Corresponding Source
+
+This repository contains the complete corresponding source code for the
+ECGViewer application, as required by the GNU General Public License.
+
+The corresponding source includes all source files, build scripts, and
+configuration necessary to generate the distributed executable.
+
+## Contributors
+
 This project is being done as part of a team project at the University of Glasgow.
 
 Contributors:
 
 [Aaron David](@aarondav1d18)
-
-## License
-
-This project is licensed under the GNU General Public License v3.0 or later.
-See the LICENSE file for details.
 
 
 ## Current State 
