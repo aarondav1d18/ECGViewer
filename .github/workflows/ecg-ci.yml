@@ -48,9 +48,7 @@ jobs:
           tar czf cpp-build-artifacts.tar.gz \
             ECGViewer/build \
             ECGViewer/parseECG*.so \
-            ECGViewer/parseECG*.pyd \
-            ECGViewer/ECGViewer*.so \
-            ECGViewer/ECGViewer*.pyd
+            ECGViewer/ECGViewer*.so 
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
