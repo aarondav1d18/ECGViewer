@@ -4,7 +4,7 @@ This project is being done as part of a team project at the University of Glasgo
 
 Contributors:
 
-[Aaron David](@aarondav1d18)
+[Aaron David](https://github.com/aarondav1d18)
 
 ## License
 
