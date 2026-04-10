@@ -86,10 +86,14 @@ class ECGViewer:
         self.art_mask = self._build_artifact_mask()
         (
             self.P_times, self.P_vals,
+            self.Ps_times, self.Ps_vals,
+            self.Pe_times, self.Pe_vals,
             self.Q_times, self.Q_vals,
             self.R_times, self.R_vals,
             self.S_times, self.S_vals,
             self.T_times, self.T_vals,
+            self.Ts_times, self.Ts_vals,
+            self.Te_times, self.Te_vals,
         ) = self._beats_to_numpy_fiducials()
 
     def show(self) -> None:
@@ -106,11 +110,16 @@ class ECGViewer:
             self.cfg.ylim,
             self.hide_artifacts,
             self.P_times, self.P_vals,
+            self.Ps_times, self.Ps_vals,
+            self.Pe_times, self.Pe_vals,
             self.Q_times, self.Q_vals,
             self.R_times, self.R_vals,
             self.S_times, self.S_vals,
             self.T_times, self.T_vals,
+            self.Ts_times, self.Ts_vals,
+            self.Te_times, self.Te_vals,
             self.file_prefix,
+            self.cfg.colour_blind_mode
         )
 
     def _build_artifact_mask(self) -> np.ndarray:
@@ -143,13 +152,17 @@ class ECGViewer:
             np.ndarray, np.ndarray,
             np.ndarray, np.ndarray,
             np.ndarray, np.ndarray,
+            np.ndarray, np.ndarray,
+            np.ndarray, np.ndarray,
+            np.ndarray, np.ndarray,
+            np.ndarray, np.ndarray,
             np.ndarray, np.ndarray]:
         """
         Convert detected beat fiducials into numpy arrays for plotting/interop.
 
         Returns:
-            A 10-tuple of (times, values) pairs:
-            (P_times, P_vals, Q_times, Q_vals, R_times, R_vals, S_times, S_vals, T_times, T_vals).
+            A 18-tuple of (times, values) pairs:
+            (P_times, P_vals, Ps_times, Ps_vals, Pe_times, Pe_vals, Q_times, Q_vals, R_times, R_vals, S_times, S_vals, T_times, T_vals, Ts_times, Ts_vals, Te_times, Te_vals).
         """
         t_rel = self.t
         v_plot = self.v_plot
@@ -164,10 +177,14 @@ class ECGViewer:
 
         # Build time arrays
         P_times = extract_times("p_time")
+        Ps_times = extract_times("p_start_time")
+        Pe_times = extract_times("p_end_time")
         Q_times = extract_times("q_time")
         R_times = extract_times("r_time")
         S_times = extract_times("s_time")
         T_times = extract_times("t_time")
+        Ts_times = extract_times("t_start_time")
+        Te_times = extract_times("t_end_time")
 
         # Vectorised interpolation (one interp per wave type)
         def interp_vals(times: np.ndarray) -> np.ndarray:
@@ -176,16 +193,24 @@ class ECGViewer:
             return np.interp(times, t_rel, v_plot)
 
         P_vals = interp_vals(P_times)
+        Ps_vals = interp_vals(Ps_times)
+        Pe_vals = interp_vals(Pe_times)
         Q_vals = interp_vals(Q_times)
         R_vals = interp_vals(R_times)
         S_vals = interp_vals(S_times)
         T_vals = interp_vals(T_times)
+        Ts_vals = interp_vals(Ts_times)
+        Te_vals = interp_vals(Te_times)
 
         return (
             P_times, P_vals,
+            Ps_times, Ps_vals,
+            Pe_times, Pe_vals,
             Q_times, Q_vals,
             R_times, R_vals,
             S_times, S_vals,
             T_times, T_vals,
+            Ts_times, Ts_vals,
+            Te_times, Te_vals,
         )
 

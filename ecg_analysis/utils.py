@@ -18,8 +18,16 @@ class BeatFeatures:
     s_idx: int | None = None
     p_time: float | None = None
     p_idx: int | None = None
+    p_start_time: float | None = None
+    p_start_idx: int | None = None
+    p_end_time: float | None = None
+    p_end_idx: int | None = None
     t_time: float | None = None
     t_idx: int | None = None
+    t_start_time: float | None = None
+    t_start_idx: int | None = None
+    t_end_time: float | None = None
+    t_end_idx: int | None = None
 
 def parse_ecg_file(path: str) -> tuple[np.ndarray, np.ndarray, float | None]:
     '''
@@ -639,7 +647,7 @@ def detect_fiducials(
     beats: list[BeatFeatures] = []
 
     # refine R, then find Q, S, P
-    for ri0 in r_idx_raw:
+    for i,ri0 in enumerate(r_idx_raw):
         # refine R: snap to actual max of v in +-20 ms window
         left = max(0, ri0 - r_ref_span)
         right = min(t.size, ri0 + r_ref_span)
@@ -650,6 +658,14 @@ def detect_fiducials(
             ri = int(ri0)
 
         bf = BeatFeatures(r_time=float(t[ri]), r_idx=ri)
+
+        #get next R if its not last R -----
+        if i <len(r_idx_raw)-1:
+            r_next=r_idx_raw[i+1]
+            rr_cur=r_next-ri
+        else:
+            r_next=None
+            rr_cur=None
 
         # Q: local min before R
         q_start = max(0, ri - qrs_half)
@@ -668,20 +684,101 @@ def detect_fiducials(
             bf.s_time = float(t[s_local])
 
         # P: small peak before QRS
-        p_end = max(0, ri - p_min)
-        p_start = max(0, ri - p_max)
+        #Defining search window
+        if bf.q_idx is not None:  #choosing window start and end Either R or Q
+            anchor=bf.q_idx
+        else:
+            anchor=bf.r_idx
+
+        p_guard=int(0.05*rr_cur) if rr_cur is not None else int(0.03*fs)
+        p_guard=max(int(0.005*fs),min(p_guard,int(0.06*fs)))  #5ms-60ms based on variation of hearts
+        p_q_margin=max(0,anchor-p_guard)
+
+        if rr_cur is not None and rr_cur>0:   #if there exists an rr interval after the P wave
+            p_left=int(rr_cur*0.35)
+            p_right=int(rr_cur*0.10)
+
+            p_left=max(int(0.12*fs),min(p_left,int(0.35*fs))) #120ms-350ms
+            p_right=max(int(0.03*fs),min(p_right,int(0.12*fs))) #30ms-120ms
+
+            p_start=max(0,anchor-p_left)
+            p_end=max(0,anchor-p_right)
+
+            p_end=min(p_end,p_q_margin)
+
+        else:
+            #Original (Unkown RR)
+            p_end = max(0, ri - p_min)
+            p_start = max(0, ri - p_max)
+
         if p_end > p_start:
             p_seg = v[p_start:p_end]
             if p_seg.size > 0:
                 p_local = int(np.argmax(p_seg) + p_start)
 
                 # reject if P lands on or very near an artifact
-                if _is_near_artifact(p_local, art_idx_all, noise_gap):
+                if _is_near_artifact(p_local, art_idx_all, noise_gap):    
                     p_local = None
 
                 if p_local is not None:
                     bf.p_idx = p_local
                     bf.p_time = float(t[p_local])
+
+                p_window=v[p_start:p_end]
+                if p_window.size>5 and p_local is not None:
+
+                    q1 = max(0, anchor - int(0.040 * fs))      
+                    q2 = max(0, anchor - int(0.010 * fs))
+                    quiet = v[q1:q2]                           #use quiet region after p wave before qrs to calculate basline
+                    if quiet.size < 5:
+                        quiet = v[max(0, anchor - int(0.060 * fs)) : anchor]
+
+                    quiet_med = float(np.median(quiet))
+                    mad = float(np.median(np.abs(quiet - quiet_med))) + 1e-12 
+                    sigma = 1.4826 * mad
+                    b_thr=3.0*sigma
+                    bas_dif=p_window-quiet_med
+
+                    peak_win=int(p_local-p_start)
+                    if rr_cur is not None and rr_cur > 0:
+                        hold = int(0.02 * rr_cur) #2% RR
+                    else:
+                        hold = int(0.01 * fs) #10ms hold
+
+                    hold = max(int(0.002 * fs), min(hold, int(0.020 * fs))) #2ms to 20ms for range of species
+                    hold = max(1, hold)
+
+                    #onset (left from peak)
+                    onset=0
+                    j=peak_win
+                    while j>hold:
+                        if np.all(np.abs(bas_dif[j-hold:j])<b_thr):
+                            onset=j-hold
+                            break
+                        j-=1
+
+
+                    #offset (right from peak)
+                    offset=p_window.size-1
+                    j=peak_win
+                    while j<p_window.size-hold-1:
+                        if np.all(np.abs(bas_dif[j:j+hold])<b_thr):
+                            offset=j+hold
+                            break
+                        j+=1
+
+
+                    p_onset=p_start+onset
+                    p_offset=p_start+offset
+
+                    p_onset=max(p_start,min(p_onset,p_local))  #onset between window start and peak
+                    p_offset=max(p_local,min(p_offset,p_end-1))  #offset between peak and window end
+
+                    bf.p_start_idx=int(p_onset)
+                    bf.p_start_time=float(t[p_onset])
+                    bf.p_end_idx=int(p_offset)
+                    bf.p_end_time=float(t[p_offset])
+
 
         beats.append(bf)
 
@@ -690,15 +787,15 @@ def detect_fiducials(
     rr_interval = np.diff(r_times) * 1000.0 # milliseconds
 
     for i,b in enumerate(beats[:-1]):
-        b.rr_interval = rr_interval[i]
+        b.rr_intervals = rr_interval[i]        #changed to intervals from interval
 
     if len(beats) > 0:
-        beats[-1].rr_interval = None
+        beats[-1].rr_intervals = None
 
     # temp visualisation
     for i, b in enumerate(beats):
-        if b.rr_interval is not None:
-            print(f"Beat {i}: RR = {b.rr_interval:.2f} ms")
+        if b.rr_intervals is not None:
+            print(f"Beat {i}: RR = {b.rr_intervals:.2f} ms")
         else:
             print(f"Beat {i}: RR = None (last beat)")
 
@@ -712,26 +809,35 @@ def detect_fiducials(
             # choose Q_{i+1} or fallback R_{i+1}
             q_next_idx = next_b.q_idx if next_b.q_idx is not None else next_b.r_idx
 
-            t_start = s_idx + t_margin_after_S
-            t_end = q_next_idx - t_margin_before_Q
+            t_win_start = s_idx + t_margin_after_S
+            
+                # Constrain end to before next P wave to stop detecting P peak
+            if next_b.p_idx is not None:
+                p_next_anchor = next_b.p_idx - int(0.02 * fs)  # 20ms before next P peak
+                t_win_end = min(q_next_idx - t_margin_before_Q, p_next_anchor)
+            else:
+                t_win_end = q_next_idx - t_margin_before_Q
+
+            rr_cur_t = int(q_next_idx - bf.r_idx)
         else:
             # last beat: simple window after R
-            t_start = bf.r_idx + t_last_start
-            t_end = min(t.size - 1, bf.r_idx + t_last_end)
+            t_win_start = bf.r_idx + t_last_start
+            t_win_end = min(t.size - 1, bf.r_idx + t_last_end)
+            rr_cur_t=None
 
-        if t_end <= t_start:
+        if t_win_end <= t_win_start:
             continue
 
-        t_start = max(0, t_start)
-        t_end = min(t.size, t_end)
+        t_win_start = max(0, t_win_start)
+        t_win_end = min(t.size-1, t_win_end)
 
-        seg = v[t_start:t_end]
+        seg = v[t_win_start:t_win_end]
         if seg.size == 0:
             continue
 
         # dominant peak in between-beats segment (handles inverted T with abs)
         t_rel = int(np.argmax(np.abs(seg)))
-        t_local = t_start + t_rel
+        t_local = t_win_start + t_rel
 
         # reject T if on/near artifact
         if _is_near_artifact(t_local, art_idx_all, noise_gap):
@@ -739,5 +845,67 @@ def detect_fiducials(
 
         bf.t_idx = t_local
         bf.t_time = float(t[t_local])
+
+
+        if rr_cur_t is not None and rr_cur_t > 0:
+            st_window = int(0.15 * rr_cur_t)
+        else:
+            st_window = int(0.06 * fs)
+
+        st_window = max(int(0.020 * fs), min(st_window, int(0.080 * fs)))  # 20 ms – 80 ms
+
+        st_start = max(0, t_win_start - st_window)
+        st_end   = t_win_start
+        st_seg   = v[st_start:st_end]
+
+        if st_seg.size < 5:
+            st_seg = seg 
+
+        st_med = float(np.median(st_seg))
+        st_mad = float(np.median(np.abs(st_seg - st_med))) + 1e-12
+
+        sigma_t = 1.4826 * st_mad
+        b_thr_t = 3.0 * sigma_t
+        bas_dif_t = seg - st_med
+
+        peak_win_t = t_rel
+
+        if rr_cur_t is not None and rr_cur_t > 0:
+            hold_t = int(0.02 * rr_cur_t)  #2% RR
+        else:
+            hold_t = int(0.015 * fs)   #15 ms hold
+
+        hold_t=max(int(0.003*fs), min(hold_t, int(0.03*fs)))   #3ms to 30ms
+        hold_t=max(1, hold_t)
+
+
+        t_onset=0
+        j=peak_win_t
+        while j>hold_t:
+            if np.all(np.abs(bas_dif_t[j-hold_t:j]) < b_thr_t):
+                t_onset=j-hold_t
+                break
+            j-=1
+
+
+        t_offset=seg.size-1
+        j=peak_win_t
+        while j<seg.size-hold_t-1:
+            if np.all(np.abs(bas_dif_t[j:j+hold_t])<b_thr_t):
+                t_offset =j+hold_t
+                break
+            j+=1
+
+        t_onset_idx  = t_win_start + t_onset
+        t_offset_idx = t_win_start + t_offset
+
+        t_onset_idx=max(t_win_start,min(t_onset_idx,t_local))
+        t_offset_idx=max(t_local,min(t_offset_idx,t_win_end-1))
+
+        bf.t_start_idx =int(t_onset_idx)
+        bf.t_start_time=float(t[t_onset_idx])
+        bf.t_end_idx=int(t_offset_idx)
+        bf.t_end_time=float(t[t_offset_idx])
+
 
     return beats

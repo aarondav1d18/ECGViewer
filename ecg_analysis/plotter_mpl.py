@@ -29,7 +29,7 @@ class ViewerConfig:
         downsample_window: Max number of samples (approx) used for the active window draw.
     """
     window_s: float = 10.0
-    ylim: Optional[Tuple[float, float]] = (-0.1, 0.15)
+    ylim: Optional[Tuple[float, float]] = None
     downsample_full: int = 50_000
     downsample_window: int = 20_000
 
@@ -132,10 +132,14 @@ class ECGViewer:
         for b in self.beats:
             for label, t_val in [
                 ("P", b.p_time),
+                ("Ps",b.p_start_time),
+                ("Pe",b.p_end_time),
                 ("Q", b.q_time),
                 ("R", b.r_time),
                 ("S", b.s_time),
                 ("T", b.t_time),
+                ("Ts", b.t_start_time),
+                ("Te", b.t_end_time),
             ]:
                 if t_val is None or t_val < x0 or t_val > x1:
                     continue
@@ -198,7 +202,19 @@ class ECGViewer:
         (self.ln_orig,) = self.ax.plot(t_d0, v_d0, linewidth=0.6, color="red", alpha=0.6, label="original")
         self.ax.axhline(0, color="black", linewidth=1)
         self.ax.set_xlim(left, right)
-        self.ax.set_ylim(*self.cfg.ylim if self.cfg.ylim else (-0.1, 0.15))
+
+        # y limit hardcoded
+        #self.ax.set_ylim(*self.cfg.ylim if self.cfg.ylim else (-0.1, 0.15))
+
+        # y limit set to autoscale
+        if self.cfg.ylim is not None:
+            self.ax.set_ylim(*self.cfg.ylim)
+        else:
+            ymin = np.min(self.v_plot)
+            ymax = np.max(self.v_plot)
+            margin = 0.05*(ymax-ymin)
+            self.ax.set_ylim(ymin-margin, ymax+margin)
+
         self.ax.set_xlabel("Time (s)")
         self.ax.set_ylabel(self.y_label)
         self.ax.set_title("ECG Viewer")

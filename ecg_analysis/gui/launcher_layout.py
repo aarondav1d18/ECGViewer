@@ -162,6 +162,17 @@ class LauncherLayoutMixin:
         settings_layout.addRow("", self.show_artifacts_check)
 
         card_layout.addWidget(settings_group)
+        # card_layout.addStretch(1)
+
+
+        # Show artifacts checkbox
+        self.colour_blind_mode = QCheckBox(
+            "Colour Blind Mode", settings_group
+        )
+        self.colour_blind_mode.setChecked(False)
+        settings_layout.addRow("", self.colour_blind_mode)
+
+        card_layout.addWidget(settings_group)
         card_layout.addStretch(1)
 
         left_layout.addWidget(card)
@@ -176,9 +187,12 @@ class LauncherLayoutMixin:
         self.run_button.setEnabled(False)
         self.run_button.setObjectName("primaryButton")
 
+        self.tech_glossary_button = QPushButton("Tech Glossary")
+
         self.close_button = QPushButton("Close")
 
         button_row.addWidget(self.run_button)
+        button_row.addWidget(self.tech_glossary_button)
         button_row.addWidget(self.close_button)
         left_layout.addLayout(button_row)
 

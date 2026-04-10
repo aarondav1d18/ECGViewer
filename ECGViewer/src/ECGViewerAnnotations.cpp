@@ -215,6 +215,7 @@ void ECGViewer::openNoteEditor(int noteIndex)
 
     QDialog dlg(this);
     dlg.setWindowTitle(QStringLiteral("Edit Note"));
+    dlg.setStyleSheet(this->styleSheet());
 
     QFormLayout* form = new QFormLayout(&dlg);
 
@@ -583,6 +584,7 @@ void ECGViewer::onShowNotesDialog()
     QDialog dlg(this);
     dlg.setWindowTitle("Notes");
     dlg.resize(700, 400);
+    dlg.setStyleSheet(this->styleSheet());
 
     QVBoxLayout* mainLayout = new QVBoxLayout(&dlg);
 

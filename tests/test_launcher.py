@@ -201,6 +201,7 @@ class _FakeWorker(QObject):
             "ylim": self.job.ylim,
             "hide_artifacts": self.job.hide_artifacts,
             "file_path": self.job.file_path,
+            "colour_blind_mode": self.job.colour_blind_mode,
         }
         self.finished.emit(result)
 
@@ -214,11 +215,11 @@ def test_run_clicked_success_launches_viewer(monkeypatch, launcher):
     cfg_seen = {}
 
     class FakeViewerConfig:
-        def __init__(self, window_s, ylim, hide_artifacts):
+        def __init__(self, window_s, ylim, hide_artifacts, colour_blind_mode):
             cfg_seen["window_s"] = window_s
             cfg_seen["ylim"] = ylim
             cfg_seen["hide_artifacts"] = hide_artifacts
-
+            cfg_seen["colour_blind_mode"] = colour_blind_mode
     viewer_seen = {"shown": 0}
 
     class FakeViewer:
@@ -250,6 +251,7 @@ def test_run_clicked_success_launches_viewer(monkeypatch, launcher):
     assert cfg_seen["window_s"] == pytest.approx(0.4)
     assert cfg_seen["ylim"] is None
     assert cfg_seen["hide_artifacts"] is False
+    assert cfg_seen["colour_blind_mode"] is False
 
 
 def test_run_clicked_worker_error_shows_message(monkeypatch, launcher):

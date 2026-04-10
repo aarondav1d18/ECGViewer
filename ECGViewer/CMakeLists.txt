@@ -10,6 +10,30 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(CMAKE_AUTOMOC ON)
 
+# Cross-platform: help CMake find Qt5 and pybind11 on Windows
+# If the user set QT5_DIR or Qt5_DIR env var / cmake var, append it.
+# This covers manual installs, the Qt online installer, vcpkg, and conda.
+if(DEFINED ENV{QT5_DIR} AND NOT DEFINED Qt5_DIR)
+    set(Qt5_DIR "$ENV{QT5_DIR}")
+endif()
+
+if(DEFINED Qt5_DIR)
+    list(APPEND CMAKE_PREFIX_PATH "${Qt5_DIR}")
+endif()
+
+# Conda environments: add conda prefix so find_package works out of the box
+if(DEFINED ENV{CONDA_PREFIX})
+    list(APPEND CMAKE_PREFIX_PATH "$ENV{CONDA_PREFIX}")
+    list(APPEND CMAKE_PREFIX_PATH "$ENV{CONDA_PREFIX}/Library")          # Windows conda
+    list(APPEND CMAKE_PREFIX_PATH "$ENV{CONDA_PREFIX}/Library/lib/cmake") # Windows conda Qt5
+endif()
+
+# vcpkg integration (if VCPKG_ROOT is set)
+if(DEFINED ENV{VCPKG_ROOT} AND NOT DEFINED CMAKE_TOOLCHAIN_FILE)
+    set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+        CACHE STRING "vcpkg toolchain")
+endif()
+
 set(PYBIND11_FINDPYTHON ON)
 find_package(pybind11 REQUIRED)
 
@@ -22,7 +46,7 @@ set(ECG_VIEWER_SOURCES
     src/ECGViewerInteractions.cpp
     src/ECGModule.cpp
     src/qcustomplot.cpp
-    include/plotter/qcustomplot.h
+    include/ECGViewer/qcustomplot.h
 )
 
 pybind11_add_module(ECGViewer
@@ -31,7 +55,7 @@ pybind11_add_module(ECGViewer
 
 target_include_directories(ECGViewer
     PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/include/plotter"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/ECGViewer"
 )
 
 target_link_libraries(ECGViewer
@@ -48,6 +72,18 @@ set_target_properties(ECGViewer PROPERTIES
     ARCHIVE_OUTPUT_DIRECTORY  "${CMAKE_CURRENT_SOURCE_DIR}/"
 )
 
+# Windows: MSVC multi-config generators put outputs in Debug/Release subdirs.
+# Force them all to the same flat directory.
+if(WIN32)
+    foreach(cfg DEBUG RELEASE RELWITHDEBINFO MINSIZEREL)
+        set_target_properties(ECGViewer PROPERTIES
+            LIBRARY_OUTPUT_DIRECTORY_${cfg}  "${CMAKE_CURRENT_SOURCE_DIR}/"
+            RUNTIME_OUTPUT_DIRECTORY_${cfg}  "${CMAKE_CURRENT_SOURCE_DIR}/"
+            ARCHIVE_OUTPUT_DIRECTORY_${cfg}  "${CMAKE_CURRENT_SOURCE_DIR}/"
+        )
+    endforeach()
+endif()
+
 set(PARSE_ECG_SOURCES
     src/ParseEcg.cpp
 )
@@ -63,10 +99,17 @@ set_target_properties(parseECG PROPERTIES
     ARCHIVE_OUTPUT_DIRECTORY  "${CMAKE_CURRENT_SOURCE_DIR}/"
 )
 
-# Usage from plotter/build:
-#   cmake --build . --target clean-all
-# OR 
-#   make clean
+if(WIN32)
+    foreach(cfg DEBUG RELEASE RELWITHDEBINFO MINSIZEREL)
+        set_target_properties(parseECG PROPERTIES
+            LIBRARY_OUTPUT_DIRECTORY_${cfg}  "${CMAKE_CURRENT_SOURCE_DIR}/"
+            RUNTIME_OUTPUT_DIRECTORY_${cfg}  "${CMAKE_CURRENT_SOURCE_DIR}/"
+            ARCHIVE_OUTPUT_DIRECTORY_${cfg}  "${CMAKE_CURRENT_SOURCE_DIR}/"
+        )
+    endforeach()
+endif()
+
+# clean-all target
 add_custom_target(clean-all
     COMMAND ${CMAKE_COMMAND} -E rm -f "$<TARGET_FILE:ECGViewer>"
     COMMAND ${CMAKE_COMMAND} -E rm -f "$<TARGET_FILE:parseECG>"

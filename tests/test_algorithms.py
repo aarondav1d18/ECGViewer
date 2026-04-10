@@ -558,3 +558,58 @@ def test_clean_with_noise_modifies_near_artifact(monkeypatch, synthetic_ecg):
 
     assert out.shape == y2.shape
     assert np.any(out != y2)  # something changed
+
+
+def test_p_wave_onset_before_peak_offset_after_peak(synthetic_ecg):
+    """Onset <= peak <= offset for every beat with P bounds."""
+    t, v, fs, _ = synthetic_ecg
+    beats = detect_fiducials(t, v, fs)
+
+    for b in beats:
+        if b.p_start_idx is not None and b.p_idx is not None:
+            assert b.p_start_idx <= b.p_idx
+        if b.p_end_idx is not None and b.p_idx is not None:
+            assert b.p_end_idx >= b.p_idx
+
+
+def test_t_wave_onset_before_peak_offset_after_peak(synthetic_ecg):
+    """Onset <= peak <= offset for every beat with T bounds."""
+    t, v, fs, _ = synthetic_ecg
+    beats = detect_fiducials(t, v, fs)
+
+    for b in beats:
+        if b.t_start_idx is not None and b.t_idx is not None:
+            assert b.t_start_idx <= b.t_idx
+        if b.t_end_idx is not None and b.t_idx is not None:
+            assert b.t_end_idx >= b.t_idx
+
+
+def test_p_wave_onset_offset_within_physiological_bounds(synthetic_ecg):
+    """P onset/offset must sit within the expected window relative to R."""
+    t, v, fs, _ = synthetic_ecg
+    beats = detect_fiducials(t, v, fs)
+
+    for b in beats:
+        if b.p_start_idx is not None:
+            assert b.r_idx - b.p_start_idx <= int(0.35 * fs)
+        if b.p_end_idx is not None:
+            assert b.p_end_idx < b.r_idx
+
+
+def test_t_wave_onset_after_s(synthetic_ecg):
+    """T onset should always be after S wave."""
+    t, v, fs, _ = synthetic_ecg
+    beats = detect_fiducials(t, v, fs)
+
+    for b in beats:
+        if b.t_start_idx is not None and b.s_idx is not None:
+            assert b.t_start_idx >= b.s_idx
+
+
+def test_last_beat_t_wave_no_crash(synthetic_ecg):
+    """Last beat has no next R - T detection completes without error."""
+    t, v, fs, _ = synthetic_ecg
+    beats = detect_fiducials(t, v, fs)
+
+    last = beats[-1]
+    assert last.rr_intervals is None

@@ -462,8 +462,8 @@ static py::tuple parse_ecg_file_py(const std::string &path) {
     auto *t_vec = new std::vector<double>(std::move(data.t));
     auto *v_vec = new std::vector<double>(std::move(data.v));
 
-    py::ssize_t n = static_cast<py::ssize_t>(t_vec->size());
-    if (n != static_cast<py::ssize_t>(v_vec->size())) {
+    py::size_t n = static_cast<py::size_t>(t_vec->size());
+    if (n != static_cast<py::size_t>(v_vec->size())) {
         delete t_vec;
         delete v_vec;
         throw std::runtime_error("Internal error: t and v sizes differ.");
@@ -475,14 +475,14 @@ static py::tuple parse_ecg_file_py(const std::string &path) {
     py::array t_arr(
         py::buffer_info(
             t_vec->data(), sizeof(double), py::format_descriptor<double>::format(),
-            1, { n }, { static_cast<py::ssize_t>(sizeof(double)) }
+            1, { n }, { static_cast<py::size_t>(sizeof(double)) }
         ),
         t_caps
     );
     py::array v_arr(
         py::buffer_info(
             v_vec->data(), sizeof(double), py::format_descriptor<double>::format(),
-            1, { n }, { static_cast<py::ssize_t>(sizeof(double)) }
+            1, { n }, { static_cast<py::size_t>(sizeof(double)) }
         ),
         v_caps
     );

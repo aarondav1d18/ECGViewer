@@ -17,12 +17,14 @@ class ViewerConfig:
         downsample_full: Max number of samples (approx) used for initial draw (mpl).
         downsample_window: Max number of samples (approx) used for window draw (mpl).
         hide_artifacts: Whether to hide artifact regions/markers if supported by the backend.
+        colour_blind_mode: Whether to use a colour-blind friendly palette.
     """
     window_s: float = 10.0
     ylim: Optional[Tuple[float, float]] = (-0.1, 0.15)
     downsample_full: int = 50_000
     downsample_window: int = 20_000
     hide_artifacts: bool = False
+    colour_blind_mode: bool = False
 
 
 def _cpp_available() -> bool:

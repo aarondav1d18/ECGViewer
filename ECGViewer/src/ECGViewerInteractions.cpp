@@ -79,8 +79,37 @@ void ECGViewer::onPlotMousePress(QMouseEvent* event)
         return;
 
     const bool shiftHeld = (event->modifiers() & Qt::ShiftModifier) != 0;
-
     QCPAbstractItem* item = plot_->itemAt(event->pos(), true);
+
+    // Overlay mode has priority over Shift+region-note creation.
+    if (item) {
+        int ovIndex = -1;
+        if (overlayIndexFromItem(item, ovIndex)) {
+            if ((ovIndex >= 0 && ovIndex < overlays_.size()) && areOverlaysMoveable_) {
+                activeOverlayIndex_ = ovIndex;
+                overlayDragMode_ = OverlayDragMode::Moving;
+
+                overlayMoveStartX_ = mouseTimeClamped(event);
+                overlayMoveOrigDx_ = overlays_[ovIndex].dx;
+
+                beginItemDrag(Qt::SizeHorCursor);
+                return;
+            }
+        }
+    }
+    if (overlayMode_) {
+        if (shiftHeld && !item) {
+            overlayDragMode_ = OverlayDragMode::Selecting;
+            overlayAnchorX_ = mouseTimeClamped(event);
+
+            updateOverlayRubberBand(overlayAnchorX_, overlayAnchorX_);
+            beginItemDrag(Qt::CrossCursor);
+
+            plot_->replot(QCustomPlot::rpQueuedReplot);
+            return;
+        }
+    }
+
 
     if (shiftHeld && item) {
         for (int i = 0; i < notesCurrent_.size(); ++i) {
@@ -162,7 +191,23 @@ void ECGViewer::onPlotMousePress(QMouseEvent* event)
         return;
     }
 
-    if (!item)
+    for (int i = 0; i < fiducialsCurrent_.size(); ++i) {
+        auto& f = fiducialsCurrent_[i];
+        if (f.line == item || f.text == item) {
+            draggingFiducial_ = true;
+            activeFiducialIndex_ = i;
+
+            double clickX = plot_->xAxis->pixelToCoord(event->pos().x());
+            auto r = fiducialRefsFor(f.type);
+            double currentX = (*r.times)[f.index];
+            dragOffsetSeconds_ = currentX - clickX;
+
+            beginItemDrag(Qt::ClosedHandCursor);
+            return;
+        }
+    }
+
+    if (!item || !areNotesMoveable_)
         return;
 
     for (int i = 0; i < notesCurrent_.size(); ++i) {
@@ -181,21 +226,6 @@ void ECGViewer::onPlotMousePress(QMouseEvent* event)
         }
     }
 
-    for (int i = 0; i < fiducialsCurrent_.size(); ++i) {
-        auto& f = fiducialsCurrent_[i];
-        if (f.line == item || f.text == item) {
-            draggingFiducial_ = true;
-            activeFiducialIndex_ = i;
-
-            double clickX = plot_->xAxis->pixelToCoord(event->pos().x());
-            auto r = fiducialRefsFor(f.type);
-            double currentX = (*r.times)[f.index];
-            dragOffsetSeconds_ = currentX - clickX;
-
-            beginItemDrag(Qt::ClosedHandCursor);
-            return;
-        }
-    }
 }
 
 /**
@@ -204,6 +234,30 @@ void ECGViewer::onPlotMousePress(QMouseEvent* event)
  */
 void ECGViewer::onPlotMouseMove(QMouseEvent* event)
 {
+
+    if (overlayDragMode_ == OverlayDragMode::Selecting) {
+        const double x = mouseTimeClamped(event);
+
+        updateOverlayRubberBand(overlayAnchorX_, x);
+        plot_->replot(QCustomPlot::rpQueuedReplot);
+        return;
+    }
+    if (overlayDragMode_ == OverlayDragMode::Moving &&
+        activeOverlayIndex_ >= 0 && activeOverlayIndex_ < overlays_.size())
+    {
+        const double x = mouseTimeClamped(event);
+        const double dx = x - overlayMoveStartX_;
+
+        OverlayVisual& ov = overlays_[activeOverlayIndex_];
+        ov.dx = overlayMoveOrigDx_ + dx;
+
+        applyOverlayTransform(ov);
+
+        setCursor(Qt::SizeHorCursor);
+        plot_->replot(QCustomPlot::rpQueuedReplot);
+        return;
+    }
+
     if (creatingRegion_ && creatingNoteIndex_ >= 0 && creatingNoteIndex_ < notes_.size())
     {
         Note& n = notes_[creatingNoteIndex_];
@@ -364,10 +418,13 @@ void ECGViewer::onPlotMouseMove(QMouseEvent* event)
     }
 
     QCPAbstractItem* item = plot_->itemAt(event->pos(), true);
+
     int foundNoteIndex = -1;
     int foundFidIndex  = -1;
+    int foundOverlayIndex = -1;
 
     if (item) {
+        // Notes first
         for (int i = 0; i < notesCurrent_.size(); ++i) {
             const auto& nv = notesCurrent_[i];
             if (nv.line == item || nv.text == item || nv.rect == item) {
@@ -376,6 +433,7 @@ void ECGViewer::onPlotMouseMove(QMouseEvent* event)
             }
         }
 
+        // Then fiducials
         if (foundNoteIndex < 0) {
             for (int i = 0; i < fiducialsCurrent_.size(); ++i) {
                 const auto& f = fiducialsCurrent_[i];
@@ -385,16 +443,26 @@ void ECGViewer::onPlotMouseMove(QMouseEvent* event)
                 }
             }
         }
+
+        // Then overlays (rects)
+        if (foundNoteIndex < 0 && foundFidIndex < 0) {
+            overlayIndexFromItem(item, foundOverlayIndex);
+        }
     }
 
     hoverNoteIndex_ = foundNoteIndex;
     hoverFiducialIndex_ = foundFidIndex;
+    hoverOverlayIndex_ = foundOverlayIndex;
 
-    if (hoverNoteIndex_ >= 0 || hoverFiducialIndex_ >= 0) {
+    if ((hoverNoteIndex_ >= 0 && areNotesMoveable_) || 
+        hoverFiducialIndex_ >= 0 || 
+        (hoverOverlayIndex_ >= 0 && areOverlaysMoveable_)
+    ) {
         setCursor(Qt::OpenHandCursor);
     } else {
         setCursor(Qt::ArrowCursor);
     }
+
 }
 
 /**
@@ -420,6 +488,33 @@ void ECGViewer::onPlotMouseRelease(QMouseEvent* event)
 {
     if (event->button() != Qt::LeftButton)
         return;
+
+    if (overlayMode_) {
+        if (overlayDragMode_ == OverlayDragMode::Selecting) {
+            overlayDragMode_ = OverlayDragMode::None;
+
+            const double x = mouseTimeClamped(event);
+
+            if (overlayRubberBand_) {
+                overlayRubberBand_->setVisible(false);
+            }
+
+            endItemDrag();
+
+            finalizeOverlayFromSelection(overlayAnchorX_, x);
+            return;
+        }
+
+    }
+    if (overlayDragMode_ == OverlayDragMode::Moving) {
+        overlayDragMode_ = OverlayDragMode::None;
+        activeOverlayIndex_ = -1;
+
+        endItemDrag();
+        plot_->replot(QCustomPlot::rpQueuedReplot);
+        return;
+    }
+
 
     if (creatingRegion_) {
         creatingRegion_ = false;
@@ -482,6 +577,278 @@ void ECGViewer::onPlotMouseRelease(QMouseEvent* event)
     plot_->replot();
 }
 
+
+double ECGViewer::mouseVoltsClamped(QMouseEvent* e) const
+{
+    double y = plot_->yAxis->pixelToCoord(e->pos().y());
+    const double yLow = plot_->yAxis->range().lower;
+    const double yHigh = plot_->yAxis->range().upper;
+
+    if (y < yLow) y = yLow;
+    if (y > yHigh) y = yHigh;
+    return y;
+}
+
+void ECGViewer::setOverlayMode(bool enabled)
+{
+    overlayMode_ = enabled;
+
+    if (overlayMode_) {
+        // Overlay selection uses Shift+drag; keep normal drag/zoom available.
+        // We also avoid fighting with rect-zoom mode.
+        if (zoomRectMode_) {
+            zoomRectMode_ = false;
+            if (btnZoomRect_) btnZoomRect_->setChecked(false);
+        }
+    }
+
+    overlayDragMode_ = OverlayDragMode::None;
+    activeOverlayIndex_ = -1;
+
+    if (overlayRubberBand_) {
+        overlayRubberBand_->setVisible(false);
+        plot_->replot(QCustomPlot::rpQueuedReplot);
+    }
+}
+
+void ECGViewer::clearOverlays()
+{
+    for (auto& ov : overlays_) {
+        if (ov.rect) plot_->removeItem(ov.rect);
+        ov.rect = nullptr;
+
+        if (ov.graph) {
+            plot_->removePlottable(ov.graph);
+        }
+        ov.graph = nullptr;
+    }
+    overlays_.clear();
+
+    activeOverlayIndex_ = -1;
+    overlayDragMode_ = OverlayDragMode::None;
+
+    if (overlayRubberBand_) {
+        overlayRubberBand_->setVisible(false);
+    }
+
+    plot_->replot();
+}
+
+void ECGViewer::setOverlaysVisible(bool visible)
+{
+    overlaysVisible_ = visible;
+
+    for (auto& ov : overlays_) {
+        ov.visible = visible;
+        if (ov.graph) ov.graph->setVisible(visible);
+        if (ov.rect) ov.rect->setVisible(visible);
+    }
+
+    plot_->replot(QCustomPlot::rpQueuedReplot);
+}
+
+bool ECGViewer::overlayIndexFromItem(QCPAbstractItem* item, int& outIndex) const
+{
+    outIndex = -1;
+    if (!item) return false;
+
+    for (int i = 0; i < overlays_.size(); ++i) {
+        if (overlays_[i].rect == item) {
+            outIndex = i;
+            return true;
+        }
+    }
+    return false;
+}
+
+void ECGViewer::ensureOverlayRubberBand()
+{
+    if (overlayRubberBand_) return;
+
+    overlayRubberBand_ = new QCPItemRect(plot_);
+    overlayRubberBand_->setClipToAxisRect(true);
+    overlayRubberBand_->setSelectable(false);
+
+    QPen pen(QColor(220, 20, 60));
+    pen.setWidthF(1.0);
+    overlayRubberBand_->setPen(pen);
+    overlayRubberBand_->setBrush(QBrush(QColor(220, 20, 60, 40)));
+    overlayRubberBand_->setVisible(false);
+}
+
+void ECGViewer::updateOverlayRubberBand(double x0, double x1)
+{
+    ensureOverlayRubberBand();
+
+    const double left = std::min(x0, x1);
+    const double right = std::max(x0, x1);
+
+    const double yLow = plot_->yAxis->range().lower;
+    const double yHigh = plot_->yAxis->range().upper;
+
+    overlayRubberBand_->topLeft->setCoords(left, yHigh);
+    overlayRubberBand_->bottomRight->setCoords(right, yLow);
+    overlayRubberBand_->setVisible(true);
+}
+
+/**
+ * @brief Apply current overlay transform (dx) to the overlay visual elements.
+ * @details Updates the graph data and rectangle item positions based on the stored
+ * dx offset. Y values remain unchanged.
+ * 
+ * @param ov OverlayVisual to transform
+ * @return void
+ */
+void ECGViewer::applyOverlayTransform(OverlayVisual& ov)
+{
+    if (!ov.graph) return;
+
+    QVector<double> x;
+    x.resize(ov.baseX.size());
+
+    for (int i = 0; i < ov.baseX.size(); ++i) {
+        x[i] = ov.baseX[i] + ov.dx;
+    }
+
+    // Y stays exactly the stored base data (no dy)
+    ov.graph->setData(x, ov.baseY);
+
+    const double left = std::min(ov.x0, ov.x1) + ov.dx;
+    const double right = std::max(ov.x0, ov.x1) + ov.dx;
+
+    const double yLow = plot_->yAxis->range().lower;
+    const double yHigh = plot_->yAxis->range().upper;
+
+    if (ov.rect) {
+        ov.rect->topLeft->setCoords(left, yHigh);
+        ov.rect->bottomRight->setCoords(right, yLow);
+    }
+}
+
+
+/**
+ * @brief Finalize overlay creation from a selected region.
+ * @details Samples the cleaned ECG data over the selected time range,
+ * downsampling if necessary, and creates the overlay plot and rectangle items.
+ * The overlay is added to the internal list and displayed if overlays are set to visible.
+ * Handles edge cases like zero-length selections and ensures proper indexing.
+ * Uses vClean_ for overlay data; change to vOrig_ if original signal is desired.
+ * 
+ * @param x0 Start of selection in relative time (seconds).
+ * @param x1 End of selection in relative time (seconds).
+ * @return void
+ */
+void ECGViewer::finalizeOverlayFromSelection(double x0, double x1)
+{
+    const double left = std::min(x0, x1);
+    const double right = std::max(x0, x1);
+
+    if (right - left <= 0.0) {
+        return;
+    }
+
+    const double tAbs0 = t_.first() + left;
+    const double tAbs1 = t_.first() + right;
+
+    int i0 = static_cast<int>(std::floor((tAbs0 - t_.first()) * fs_));
+    int i1 = static_cast<int>(std::ceil((tAbs1 - t_.first()) * fs_));
+
+    if (i0 < 0) i0 = 0;
+    if (i1 >= t_.size()) i1 = t_.size() - 1;
+    if (i1 < i0) std::swap(i0, i1);
+
+    if (i1 - i0 < 2) {
+        return;
+    }
+
+    OverlayVisual ov;
+    ov.x0 = left;
+    ov.x1 = right;
+    ov.dx = 0.0;
+    ov.visible = overlaysVisible_;
+
+    const int rawCount = i1 - i0 + 1;
+    const int maxPoints = 8000;
+    int step = rawCount > maxPoints ? (rawCount / maxPoints) : 1;
+    if (step < 1) step = 1;
+
+    ov.baseX.reserve(rawCount / step + 1);
+    ov.baseY.reserve(rawCount / step + 1);
+
+    const double t0 = t_.first();
+    for (int i = i0; i <= i1; i += step) {
+        const double tRel = t_[i] - t0;
+        ov.baseX.push_back(tRel);
+        ov.baseY.push_back(vClean_[i]);
+    }
+
+    if (ov.baseX.size() < 2) {
+        return;
+    }
+
+    ov.graph = plot_->addGraph();
+    {
+        QPen p(QColor(128, 0, 128, 200));
+        p.setWidthF(1.6);
+        ov.graph->setPen(p);
+    }
+    ov.graph->setLineStyle(QCPGraph::lsLine);
+    ov.graph->setVisible(ov.visible);
+    ov.graph->setData(ov.baseX, ov.baseY);
+
+    ov.rect = new QCPItemRect(plot_);
+    ov.rect->setClipToAxisRect(true);
+    ov.rect->setSelectable(true);
+    ov.rect->setVisible(ov.visible);
+
+    QPen rpen(QColor(128, 0, 128));
+    rpen.setWidthF(1.2);
+    ov.rect->setPen(rpen);
+    ov.rect->setBrush(QBrush(QColor(128, 0, 128, 25)));
+
+    const double yLow = plot_->yAxis->range().lower;
+    const double yHigh = plot_->yAxis->range().upper;
+
+    ov.rect->topLeft->setCoords(left, yHigh);
+    ov.rect->bottomRight->setCoords(right, yLow);
+
+    overlays_.push_back(ov);
+
+    plot_->replot(QCustomPlot::rpQueuedReplot);
+}
+
+void ECGViewer::deleteHoveredOverlay()
+{
+    if (hoverOverlayIndex_ < 0 || hoverOverlayIndex_ >= overlays_.size())
+        return;
+
+    OverlayVisual& ov = overlays_[hoverOverlayIndex_];
+
+    if (ov.rect) {
+        plot_->removeItem(ov.rect);
+        ov.rect = nullptr;
+    }
+
+    if (ov.graph) {
+        plot_->removePlottable(ov.graph);
+        ov.graph = nullptr;
+    }
+
+    overlays_.remove(hoverOverlayIndex_);
+
+    // Keep active index sane if user was dragging/selected one.
+    if (activeOverlayIndex_ == hoverOverlayIndex_) {
+        activeOverlayIndex_ = -1;
+        overlayDragMode_ = OverlayDragMode::None;
+    } else if (activeOverlayIndex_ > hoverOverlayIndex_) {
+        activeOverlayIndex_ -= 1;
+    }
+
+    hoverOverlayIndex_ = -1;
+
+    plot_->replot();
+}
+
 void ECGViewer::keyPressEvent(QKeyEvent* event)
 {
     int step = static_cast<int>(0.2 * window_samples_);
@@ -499,11 +866,14 @@ void ECGViewer::keyPressEvent(QKeyEvent* event)
 
     case Qt::Key_Delete:
     case Qt::Key_Backspace:
-        if (hoverNoteIndex_ >= 0)
+        if (hoverOverlayIndex_ >= 0)
+            deleteHoveredOverlay();
+        else if (hoverNoteIndex_ >= 0)
             deleteHoveredNote();
         else
             deleteHoveredFiducial();
         break;
+
 
     default:
         QMainWindow::keyPressEvent(event);

@@ -42,7 +42,7 @@ static QVector<T> toQVector1D(py::array_t<T, py::array::c_style | py::array::for
     }
     auto* ptr = static_cast<T*>(info.ptr);
     QVector<T> v(info.size);
-    for (ssize_t i = 0; i < info.size; ++i)
+    for (size_t i = 0; i < info.size; ++i)
         v[static_cast<int>(i)] = ptr[i];
     return v;
 }
@@ -86,6 +86,10 @@ static void show_ecg_viewer(
     bool hide_artifacts,
     py::array_t<double> p_times,
     py::array_t<double> p_vals,
+    py::array_t<double> ps_times,
+    py::array_t<double> ps_vals,
+    py::array_t<double> pe_times,
+    py::array_t<double> pe_vals,
     py::array_t<double> q_times,
     py::array_t<double> q_vals,
     py::array_t<double> r_times,
@@ -94,7 +98,13 @@ static void show_ecg_viewer(
     py::array_t<double> s_vals,
     py::array_t<double> t_times,
     py::array_t<double> t_vals,
-    const py::object& file_prefix)
+    py::array_t<double> ts_times,
+    py::array_t<double> ts_vals,
+    py::array_t<double> te_times,
+    py::array_t<double> te_vals,
+    const py::object& file_prefix,
+    bool colour_blind_mode
+)
 {
     auto tq = toQVector1D<double>(t, "t");
     auto vOrigQ = toQVector1D<double>(v_orig, "v_orig");
@@ -132,10 +142,14 @@ static void show_ecg_viewer(
     };
 
     auto P = loadPair(p_times, p_vals, "P");
+    auto Ps = loadPair(ps_times, ps_vals, "Ps");
+    auto Pe = loadPair(pe_times, pe_vals, "Pe");
     auto Q = loadPair(q_times, q_vals, "Q");
     auto R = loadPair(r_times, r_vals, "R");
     auto S = loadPair(s_times, s_vals, "S");
     auto T = loadPair(t_times, t_vals, "T");
+    auto Ts = loadPair(ts_times, ts_vals, "Ts");
+    auto Te = loadPair(te_times, te_vals, "Te");
 
     QString filePrefix;
     if (!file_prefix.is_none()) {
@@ -169,11 +183,16 @@ static void show_ecg_viewer(
         ymin,
         ymax,
         hide_artifacts,
+        colour_blind_mode,
         P.times, P.vals,
+        Ps.times, Ps.vals,
+        Pe.times, Pe.vals,
         Q.times, Q.vals,
         R.times, R.vals,
         S.times, S.vals,
         T.times, T.vals,
+        Ts.times, Ts.vals,
+        Te.times, Te.vals,
         filePrefix
     );
 
@@ -202,6 +221,10 @@ PYBIND11_MODULE(ECGViewer, m)
         py::arg("hide_artifacts") = false,
         py::arg("p_times"),
         py::arg("p_vals"),
+        py::arg("ps_times"),
+        py::arg("ps_vals"),
+        py::arg("pe_times"),
+        py::arg("pe_vals"),
         py::arg("q_times"),
         py::arg("q_vals"),
         py::arg("r_times"),
@@ -210,5 +233,10 @@ PYBIND11_MODULE(ECGViewer, m)
         py::arg("s_vals"),
         py::arg("t_times"),
         py::arg("t_vals"),
-        py::arg("file_prefix"));
+        py::arg("ts_times"),
+        py::arg("ts_vals"),
+        py::arg("te_times"),
+        py::arg("te_vals"),
+        py::arg("file_prefix"),
+        py::arg("colour_blind_mode") = false);
 }

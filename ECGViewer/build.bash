@@ -42,21 +42,12 @@ configure_and_build() {
     )
 }
 
-install_build() {
-    echo "Installing..."
-    (
-        cd "$build_dir"
-        make install
-    )
-    echo "Install complete."
-}
 
 help() {
-  echo "Useage build.bash [--clean | --clean-build | --install]"
+  echo "Useage build.bash [--clean | --clean-build]"
   echo ""
   echo "--clean: Clean up all build files and pybind files"
   echo "--clean-build: Clean up all build files and then do a fresh build"
-  echo "--install: This will install the exectuable on the system (will probably remove soon)"
 }
 
 ACTION="build"   # default action
@@ -66,9 +57,6 @@ if [[ $# -gt 0 ]]; then
         --clean)
             ACTION="clean"
             ;;
-        --install)
-            ACTION="install"
-            ;;
         --clean-build)
             ACTION="clean_and_build"
             ;;
@@ -77,7 +65,7 @@ if [[ $# -gt 0 ]]; then
             ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: $0 [--clean|--install]"
+            echo "Usage: $0 [--clean]"
             exit 1
             ;;
     esac
@@ -96,10 +84,6 @@ case "$ACTION" in
         ;;
     help)
         help
-        ;;
-    install)
-        configure_and_build
-        install_build
         ;;
 esac
 

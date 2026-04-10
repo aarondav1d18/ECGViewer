@@ -27,6 +27,7 @@ class ECGJobConfig:
     ylim: Optional[Tuple[float, float]]
     hide_artifacts: bool
     bandpass: bool = False
+    colour_blind_mode: bool = False
 
 
 class ECGWorker(QObject):
@@ -84,6 +85,7 @@ class ECGWorker(QObject):
                 "ylim": j.ylim,
                 "hide_artifacts": j.hide_artifacts,
                 "file_path": j.file_path,
+                "colour_blind_mode": j.colour_blind_mode,
             }
             self.progress.emit("Finished preprocessing.", 100)
             self.finished.emit(result)

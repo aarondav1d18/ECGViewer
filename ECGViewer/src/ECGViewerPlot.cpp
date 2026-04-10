@@ -165,11 +165,15 @@ void ECGViewer::updateFiducialLines(double x0, double x1)
         }
     };
 
-    addLinesFor(pTimes_, pVals_, FiducialType::P, "P", Qt::blue);
-    addLinesFor(qTimes_, qVals_, FiducialType::Q, "Q", Qt::green);
-    addLinesFor(rTimes_, rVals_, FiducialType::R, "R", Qt::red);
-    addLinesFor(sTimes_, sVals_, FiducialType::S, "S", Qt::magenta);
-    addLinesFor(tTimes_, tVals_, FiducialType::T, "T", QColor(255, 140, 0));
+    addLinesFor(pTimes_, pVals_, FiducialType::P, "P", useColourBlindPalette_ ? QColor("#56B4E9") : Qt::blue);
+    addLinesFor(psTimes_, psVals_, FiducialType::Ps, "Ps", useColourBlindPalette_ ? QColor("#56B4E9") : Qt::blue);
+    addLinesFor(peTimes_, peVals_, FiducialType::Pe, "Pe", useColourBlindPalette_ ? QColor("#56B4E9") : Qt::blue);
+    addLinesFor(qTimes_, qVals_, FiducialType::Q, "Q", useColourBlindPalette_ ? QColor("#0072B2") : Qt::green);
+    addLinesFor(rTimes_, rVals_, FiducialType::R, "R", useColourBlindPalette_ ? QColor("#E69F00") : Qt::red);
+    addLinesFor(sTimes_, sVals_, FiducialType::S, "S", useColourBlindPalette_ ? QColor("#CC79A7") : Qt::magenta);
+    addLinesFor(tTimes_, tVals_, FiducialType::T, "T", useColourBlindPalette_ ? QColor("#D55E00") : QColor(255, 140, 0));
+    addLinesFor(tsTimes_, tsVals_, FiducialType::Ts, "Ts", useColourBlindPalette_ ? QColor("#D55E00") : QColor(255, 140, 0));
+    addLinesFor(teTimes_, teVals_, FiducialType::Te, "Te", useColourBlindPalette_ ? QColor("#D55E00") : QColor(255, 140, 0));
 }
 
 /**

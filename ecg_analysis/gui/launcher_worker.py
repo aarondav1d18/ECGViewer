@@ -11,8 +11,7 @@ my os would think the application was not responding and that pop-up would appea
 import os
 from typing import Optional, Tuple
 
-from PyQt5.QtCore import Qt, QThread, QFileInfo
-from PyQt5.QtCore import QTimer
+from PyQt5.QtCore import Qt, QThread, QFileInfo, QTimer
 from PyQt5.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -24,6 +23,26 @@ from .worker import ECGWorker, ECGJobConfig
 from ecg_analysis.plotter import ViewerConfig, ECGViewer
 
 
+def _viewer_alive(viewer) -> bool:
+    """Return True if a viewer's underlying Qt widget still exists and is visible."""
+    impl = getattr(viewer, "_impl", None)
+    if impl is None:
+        return False
+    # C++ Qt viewer (QWidget)
+    if hasattr(impl, "isVisible"):
+        try:
+            return impl.isVisible()
+        except RuntimeError:
+            # Underlying C++ object has been deleted
+            return False
+    # Matplotlib viewer — check if the figure is still open
+    fig = getattr(impl, "fig", None)
+    if fig is not None:
+        import matplotlib.pyplot as plt
+        return fig.number in plt.get_fignums()
+    return False
+
+
 class LauncherWorkerMixin:
     """
     Mixin providing file selection, validation, and worker-driven viewer launch.
@@ -33,16 +52,17 @@ class LauncherWorkerMixin:
         - Validate user input (file path, extension, y-limits).
         - Run `ECGWorker` in a `QThread` with a `QProgressDialog`.
         - On success, create and show an `ECGViewer` configured from UI values.
+        - Keep the launcher open so multiple viewers can be launched.
     """
 
     _thread: QThread | None = None
     _worker: ECGWorker | None = None
     _progress: QProgressDialog | None = None
-    hide_gui: bool = True
 
     # simple UI event handlers 
     def _connect_basic_signals(self) -> None:
         """Connect the mixin's UI controls to handlers."""
+        self._viewers = []  # prevent garbage collection of open viewer windows
         self.browse_btn.clicked.connect(self.on_browse_file)
         self.file_edit.textChanged.connect(self.on_file_text_changed)
         self.run_button.clicked.connect(self.on_run_clicked)
@@ -122,6 +142,7 @@ class LauncherWorkerMixin:
             ylim = (ymin, ymax)
 
         show_artifacts = self.show_artifacts_check.isChecked()
+        colour_blind_mode = self.colour_blind_mode.isChecked()
         hide_artifacts = not show_artifacts
 
         if self._thread is not None:
@@ -138,6 +159,7 @@ class LauncherWorkerMixin:
             ylim=ylim,
             hide_artifacts=hide_artifacts,
             bandpass=False,
+            colour_blind_mode=colour_blind_mode,
         )
 
         self.status_label.setText("Processing ECG…")
@@ -212,7 +234,7 @@ class LauncherWorkerMixin:
         QMessageBox.critical(self, "Error running viewer", msg)
 
     def _on_worker_finished(self, result: dict) -> None:
-        """Handle worker success: build and show the ECG viewer, then restore UI state."""
+        """Handle worker success: build and show the ECG viewer, keep launcher open."""
         if self._progress is not None:
             self._progress.setLabelText("Building ECG viewer…")
             self._progress.setValue(70)
@@ -228,6 +250,7 @@ class LauncherWorkerMixin:
         window = result["window"]
         ylim = result["ylim"]
         hide_artifacts = result["hide_artifacts"]
+        colour_blind = result["colour_blind_mode"]
         file_path = result["file_path"]
 
         file_prefix = QFileInfo(file_path).baseName()
@@ -236,9 +259,15 @@ class LauncherWorkerMixin:
             window_s=window,
             ylim=ylim,
             hide_artifacts=hide_artifacts,
+            colour_blind_mode=colour_blind
         )
 
         viewer = ECGViewer(t, v, fs, cfg, file_prefix=file_prefix)
+
+        # Free the heavy numpy arrays now that the viewer has copied what it needs.
+        # This prevents the launcher from holding duplicate references to the data.
+        del result, t, v
+
         if self._progress is not None:
             self._progress.setLabelText("Done.")
             self._progress.setValue(100)
@@ -250,9 +279,15 @@ class LauncherWorkerMixin:
 
         self.run_button.setEnabled(True)
         self.file_edit.setEnabled(True)
-        self.status_label.setText("Viewer opened.")
-        if self.hide_gui:
-            self.hide()
-            QApplication.processEvents()
-            QTimer.singleShot(0, self.close)
+        self.status_label.setText("Viewer opened — you can open another file.")
+
+        # Keep a reference so the viewer window isn't garbage-collected
+        self._viewers.append(viewer)
         viewer.show()
+
+        if getattr(self, "hide_gui", False):
+            self.hide()
+            QTimer.singleShot(0, self.close)
+
+        # Clean up references to any viewers that have been closed
+        self._viewers = [v for v in self._viewers if _viewer_alive(v)]

@@ -62,6 +62,7 @@ def _make_job(tmp_path, **overrides):
         ylim=None,
         hide_artifacts=False,
         bandpass=False,
+        colour_blind_mode=False,
     )
     base.update(overrides)
     return ECGJobConfig(**base)
@@ -105,6 +106,7 @@ def test_worker_happy_path_emits_progress_and_finished(monkeypatch, qtbot, tmp_p
     assert result["ylim"] is None
     assert result["hide_artifacts"] is False
     assert result["file_path"] == job.file_path
+    assert result["colour_blind_mode"] is False
 
     # Make sure progress is reasonably emitted (don’t overfit exact strings)
     assert progress[0] == ("Worker started", 0)
@@ -287,10 +289,11 @@ def test_on_worker_finished_builds_and_shows_viewer(monkeypatch, launcher):
     viewer_seen = {"shown": 0}
 
     class FakeViewerConfig:
-        def __init__(self, window_s, ylim, hide_artifacts):
+        def __init__(self, window_s, ylim, hide_artifacts, colour_blind_mode):
             cfg_seen["window_s"] = window_s
             cfg_seen["ylim"] = ylim
             cfg_seen["hide_artifacts"] = hide_artifacts
+            cfg_seen["colour_blind_mode"] = colour_blind_mode
 
     class FakeViewer:
         def __init__(self, t, v, fs, cfg, file_prefix=None):
@@ -317,6 +320,7 @@ def test_on_worker_finished_builds_and_shows_viewer(monkeypatch, launcher):
         "ylim": (0.0, 3.0),
         "hide_artifacts": True,
         "file_path": "/tmp/ecg.txt",
+        "colour_blind_mode": False,
     }
 
     launcher._on_worker_finished(result)
@@ -326,8 +330,8 @@ def test_on_worker_finished_builds_and_shows_viewer(monkeypatch, launcher):
     assert cfg_seen["window_s"] == 0.4
     assert cfg_seen["ylim"] == (0.0, 3.0)
     assert cfg_seen["hide_artifacts"] is True
-
-    assert launcher.status_label.text() == "Viewer opened."
+    assert cfg_seen["colour_blind_mode"] is False
+    assert launcher.status_label.text() == "Viewer opened — you can open another file."
     assert launcher.run_button.isEnabled() is True
     assert launcher.file_edit.isEnabled() is True
     assert launcher._progress is None
@@ -372,6 +376,7 @@ def test_on_worker_finished_hide_gui_closes_launcher(monkeypatch, launcher):
         "ylim": None,
         "hide_artifacts": False,
         "file_path": "/tmp/ecg.txt",
+        "colour_blind_mode": False,
     }
 
     launcher._on_worker_finished(result)

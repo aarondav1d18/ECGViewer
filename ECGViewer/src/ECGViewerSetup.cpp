@@ -32,6 +32,159 @@
 
 namespace ECGViewer {
 
+static QString viewerStylesheet()
+{
+    return R"QSS(
+        QMainWindow {
+            background-color: #f4f5f7;
+        }
+        QLabel {
+            font-size: 11px;
+        }
+        QLineEdit, QDoubleSpinBox {
+            background: #ffffff;
+        }
+        QGroupBox {
+            font-weight: bold;
+            border: none;
+            margin-top: 4px;
+        }
+        QGroupBox::title {
+            subcontrol-origin: margin;
+            left: 0px;
+            padding: 0px;
+        }
+        QPushButton {
+            padding: 6px 14px;
+            border-radius: 6px;
+            border: 1px solid #b0b0b0;
+            background-color: #ffffff;
+        }
+        QPushButton:disabled {
+            background-color: #d0d0d0;
+            border: 1px solid #b0b0b0;
+            color: #ffffff;
+        }
+        QPushButton:checked {
+            background-color: #f0f0f0;
+        }
+        QPushButton:hover {
+            background-color: #f0f0f0;
+        }
+        QPushButton:pressed {
+            background-color: #e0e0e0;
+        }
+
+        /* Optional: if you set objectName "primaryButton" on a button */
+        QPushButton#primaryButton, QPushButton:default {
+            background-color: #2f80ed;
+            color: #ffffff;
+            border: 1px solid #2f80ed;
+        }
+        QPushButton#primaryButton:hover, QPushButton:default:hover {
+            background-color: #2d74d3;
+        }
+        QPushButton#primaryButton:pressed {
+            background-color: #255fb2;
+        }
+
+        QStatusBar {
+            background-color: #ffffff;
+        }
+
+        QTabWidget::pane {
+            border: 1px solid #d0d0d0;
+            background: #ffffff;
+            border-radius: 8px;
+        }
+        QTabBar::tab {
+            background: #ffffff;
+            border: 1px solid #d0d0d0;
+            padding: 6px 12px;
+            border-top-left-radius: 6px;
+            border-top-right-radius: 6px;
+            margin-right: 2px;
+        }
+        QTabBar::tab:selected {
+            background: #f0f0f0;
+        }
+
+        QPushButton#modeButton:checked {
+            background-color: #d0d0d0;
+            border: 1px solid #a0a0a0;
+            color: #707070;
+        }
+
+        QPushButton#modeButton:checked:hover {
+            background-color: #d0d0d0;
+        }
+
+        QListWidget {
+            background-color: #ffffff;
+            border-radius: 8px;
+            border: 1px solid #d0d0d0;
+        }
+        QLineEdit {
+            border-radius: 6px;
+            border: 1px solid #d0d0d0;
+            padding: 6px;
+        }
+    )QSS";
+}
+
+/**
+ * @brief Apply viewer plot styling to match the launcher UI.
+ *
+ * @details
+ * Configures QCustomPlot visual properties to achieve a light, card-style appearance
+ * consistent with the Python launcher:
+ * - White plot background
+ * - Subtle gray axis lines and tick marks
+ * - Disabled secondary-axis ticks used only as a visual border
+ * - Light grid and sub-grid lines for readability without visual clutter
+ *
+ * Notes:
+ * - QCustomPlot does not support full Qt stylesheets for plot elements, so
+ *   styling is applied via pens, brushes, and axis configuration.
+ * - Secondary axes (xAxis2/yAxis2) are enabled without ticks or labels to
+ *   approximate a plot border in a version-compatible way.
+ *
+ * This function is safe to call once during construction after plot_ is created.
+ */
+void ECGViewer::setStyle() {
+    
+    plot_->axisRect()->setBackground(QBrush(QColor(255, 255, 255)));
+
+    plot_->xAxis->setBasePen(QPen(QColor(208, 208, 208)));
+    plot_->yAxis->setBasePen(QPen(QColor(208, 208, 208)));
+    plot_->xAxis2->setBasePen(QPen(QColor(208, 208, 208)));
+    plot_->yAxis2->setBasePen(QPen(QColor(208, 208, 208)));
+    plot_->xAxis2->setVisible(true);
+    plot_->yAxis2->setVisible(true);
+    plot_->xAxis2->setTicks(false);
+    plot_->yAxis2->setTicks(false);
+    plot_->xAxis2->setTickLabels(false);
+    plot_->yAxis2->setTickLabels(false);
+
+    plot_->xAxis->setBasePen(QPen(QColor(160, 160, 160)));
+    plot_->yAxis->setBasePen(QPen(QColor(160, 160, 160)));
+    plot_->xAxis->setTickPen(QPen(QColor(160, 160, 160)));
+    plot_->yAxis->setTickPen(QPen(QColor(160, 160, 160)));
+    plot_->xAxis->setSubTickPen(QPen(QColor(180, 180, 180)));
+    plot_->yAxis->setSubTickPen(QPen(QColor(180, 180, 180)));
+    plot_->xAxis->setTickLabelColor(QColor(60, 60, 60));
+    plot_->yAxis->setTickLabelColor(QColor(60, 60, 60));
+    plot_->xAxis->setLabelColor(QColor(60, 60, 60));
+    plot_->yAxis->setLabelColor(QColor(60, 60, 60));
+
+    plot_->xAxis->grid()->setPen(QPen(QColor(220, 220, 220)));
+    plot_->yAxis->grid()->setPen(QPen(QColor(220, 220, 220)));
+    plot_->xAxis->grid()->setSubGridPen(QPen(QColor(235, 235, 235)));
+    plot_->yAxis->grid()->setSubGridPen(QPen(QColor(235, 235, 235)));
+    plot_->xAxis->grid()->setSubGridVisible(true);
+    plot_->yAxis->grid()->setSubGridVisible(true);
+}
+
 /**
  * @brief ECGViewer constructor: initializes state, builds UI, and connects interactions.
  * @details This sets up:
@@ -51,8 +204,13 @@ ECGViewer::ECGViewer(const QVector<double>& t,
                      double ymin,
                      double ymax,
                      bool hide_artifacts,
+                     bool colour_blind_mode,
                      const QVector<double>& pTimes,
                      const QVector<double>& pVals,
+                     const QVector<double>& psTimes,
+                     const QVector<double>& psVals,
+                     const QVector<double>& peTimes,
+                     const QVector<double>& peVals,
                      const QVector<double>& qTimes,
                      const QVector<double>& qVals,
                      const QVector<double>& rTimes,
@@ -61,6 +219,10 @@ ECGViewer::ECGViewer(const QVector<double>& t,
                      const QVector<double>& sVals,
                      const QVector<double>& tTimes,
                      const QVector<double>& tVals,
+                     const QVector<double>& tsTimes,
+                     const QVector<double>& tsVals,
+                     const QVector<double>& teTimes,
+                     const QVector<double>& teVals,
                      const QString& filePrefix,
                      QWidget* parent)
     : QMainWindow(parent),
@@ -69,14 +231,19 @@ ECGViewer::ECGViewer(const QVector<double>& t,
       vClean_(vClean),
       artMask_(artMask),
       pTimes_(pTimes), pVals_(pVals),
+      psTimes_(psTimes), psVals_(psVals),
+      peTimes_(peTimes), peVals_(peVals),
       qTimes_(qTimes), qVals_(qVals),
       rTimes_(rTimes), rVals_(rVals),
       sTimes_(sTimes), sVals_(sVals),
       tTimes_(tTimes), tVals_(tVals),
+      tsTimes_(tsTimes), tsVals_(tsVals),
+      teTimes_(teTimes), teVals_(teVals),
       fs_(fs),
       window_s_(window_s),
       hide_artifacts_(hide_artifacts),
-      filePrefix_(filePrefix)
+      filePrefix_(filePrefix),
+      useColourBlindPalette_(colour_blind_mode)
 {
     if (t_.size() != vOrig_.size() ||
         t_.size() != vClean_.size() ||
@@ -107,11 +274,14 @@ ECGViewer::ECGViewer(const QVector<double>& t,
     auto* vbox = new QVBoxLayout(central);
 
     plot_ = new QCustomPlot(central);
+    plot_->setBackground(QBrush(QColor(255, 255, 255)));
+    setStyle();
+
     vbox->addWidget(plot_, 1);
     plot_->setInteractions(QCP::iRangeDrag | QCP::iRangeZoom | QCP::iSelectItems);
 
-    connect(plot_, &QCustomPlot::mousePress,  this, &ECGViewer::onPlotMousePress);
-    connect(plot_, &QCustomPlot::mouseMove,   this, &ECGViewer::onPlotMouseMove);
+    connect(plot_, &QCustomPlot::mousePress, this, &ECGViewer::onPlotMousePress);
+    connect(plot_, &QCustomPlot::mouseMove, this, &ECGViewer::onPlotMouseMove);
     connect(plot_, &QCustomPlot::mouseRelease,this, &ECGViewer::onPlotMouseRelease);
 
     plot_->xAxis->setLabel("Time (s)");
@@ -156,11 +326,14 @@ ECGViewer::ECGViewer(const QVector<double>& t,
         return g;
     };
 
-    graphP_ = makeScatterGraph(Qt::blue, QCPScatterStyle::ssDisc, 6);
-    graphQ_ = makeScatterGraph(Qt::green, QCPScatterStyle::ssDisc, 6);
-    graphR_ = makeScatterGraph(Qt::red, QCPScatterStyle::ssTriangle, 8);
-    graphS_ = makeScatterGraph(Qt::magenta, QCPScatterStyle::ssDisc, 6);
-    graphT_ = makeScatterGraph(QColor(255, 140, 0), QCPScatterStyle::ssDisc, 6);
+
+    graphP_ = makeScatterGraph(useColourBlindPalette_ ? QColor("#56B4E9") : QColor("#56B4E9"), QCPScatterStyle::ssDisc, 6); // P: sky blue
+    graphQ_ = makeScatterGraph(useColourBlindPalette_ ? QColor("#0072B2") : QColor("#0072B2"), QCPScatterStyle::ssDisc, 6); // Q: blue
+    graphR_ = makeScatterGraph(useColourBlindPalette_ ? QColor("#E69F00") : QColor("#E69F00"), QCPScatterStyle::ssTriangle, 8); // R: orange
+    graphS_ = makeScatterGraph(useColourBlindPalette_ ? QColor("#CC79A7") : QColor("#CC79A7"), QCPScatterStyle::ssDisc, 6); // S: purple
+    graphT_ = makeScatterGraph(useColourBlindPalette_ ? QColor("#D55E00") : QColor("#D55E00"), QCPScatterStyle::ssDisc, 6); // T: vermillion
+
+
 
     graphP_->setData(pTimes_, pVals_);
     graphQ_->setData(qTimes_, qVals_);
@@ -181,7 +354,9 @@ ECGViewer::ECGViewer(const QVector<double>& t,
     btnZoomRect_ = new QPushButton("Rect Zoom", traversalTab);
     btnNotesDialog_ = new QPushButton("Notes…", traversalTab);
     btnSave_ = new QPushButton("Save", traversalTab);
+    btnLockNotes_ = new QPushButton("Lock Notes", traversalTab);
     btnZoomRect_->setCheckable(true);
+    btnLockNotes_->setCheckable(true);
 
     slider_ = new QSlider(Qt::Horizontal, traversalTab);
     slider_->setMinimum(0);
@@ -195,6 +370,7 @@ ECGViewer::ECGViewer(const QVector<double>& t,
     traversalLayout->addWidget(btnZoomRect_);
     traversalLayout->addWidget(btnNotesDialog_);
     traversalLayout->addWidget(btnSave_);
+    traversalLayout->addWidget(btnLockNotes_);
     traversalLayout->addWidget(slider_);
 
     traversalTab->setLayout(traversalLayout);
@@ -222,14 +398,55 @@ ECGViewer::ECGViewer(const QVector<double>& t,
     manualTab->setLayout(manualLayout);
     tabWidget_->addTab(manualTab, "Manual keypoints");
 
+    QWidget* overlayTab = new QWidget(tabWidget_);
+    auto* overlayLayout = new QHBoxLayout(overlayTab);
+
+    btnOverlayToggle_ = new QPushButton("Overlay Mode", overlayTab);
+    btnOverlayToggle_->setCheckable(true);
+    btnZoomRect_->setObjectName("modeButton");
+    btnOverlayToggle_->setObjectName("modeButton");
+    btnOverlayLock_ = new QPushButton("Lock Overlays", overlayTab);
+    btnOverlayLock_->setCheckable(true);
+
+    btnClearOverlays_ = new QPushButton("Clear Overlays", overlayTab);
+    btnShowHide_ = new QPushButton("Show / Hide Overlays", overlayTab);
+
+    overlayLayout->addWidget(btnOverlayToggle_);
+    overlayLayout->addWidget(btnClearOverlays_);
+    overlayLayout->addWidget(btnShowHide_);
+    overlayLayout->addWidget(btnOverlayLock_);
+    overlayLayout->addStretch(1);
+
+    overlayTab->setLayout(overlayLayout);
+    tabWidget_->addTab(overlayTab, "Overlays");
+
+    vbox->addWidget(tabWidget_);
+
     setCentralWidget(central);
     setWindowTitle("ECG Viewer (Qt)");
+    this->setStyleSheet(viewerStylesheet());
 
     connect(slider_, &QSlider::valueChanged,
             this, [this](int value) { updateWindow(value); });
 
     connect(manualInsertButton_, &QPushButton::clicked,
             this, &ECGViewer::onInsertManualFiducial);
+    
+    connect(btnLockNotes_, &QPushButton::clicked,
+            this, [this](bool checked)
+    {
+        areNotesMoveable_ = true ? areNotesMoveable_ == false : false;
+        btnLockNotes_->setText(areNotesMoveable_ ? "Lock Notes" : "Unlock Notes");
+        btnLockNotes_->setChecked(!areNotesMoveable_);
+    });
+
+    connect(btnOverlayLock_, &QPushButton::clicked,
+            this, [this](bool checked)
+    {
+        areOverlaysMoveable_ = true ? areOverlaysMoveable_ == false : false;
+        btnOverlayLock_->setText(areOverlaysMoveable_ ? "Lock Overlays" : "Unlock Overlays");
+        btnOverlayLock_->setChecked(areOverlaysMoveable_);
+    });
 
     connect(btnZoomRect_, &QPushButton::toggled,
             this, [this](bool checked)
@@ -242,6 +459,7 @@ ECGViewer::ECGViewer(const QVector<double>& t,
             plot_->setSelectionRectMode(QCP::srmNone);
             plot_->setInteractions(QCP::iRangeDrag | QCP::iRangeZoom);
         }
+        btnZoomRect_->setChecked(zoomRectMode_);
     });
 
     connect(plot_->xAxis, qOverload<const QCPRange &>(&QCPAxis::rangeChanged),
@@ -318,6 +536,16 @@ ECGViewer::ECGViewer(const QVector<double>& t,
 
     connect(btnNotesDialog_, &QPushButton::clicked,
             this, &ECGViewer::onShowNotesDialog);
+
+    connect(btnOverlayToggle_, &QPushButton::toggled,
+            this, [this](bool checked) { setOverlayMode(checked); });
+
+    connect(btnClearOverlays_, &QPushButton::clicked,
+            this, [this]() { clearOverlays(); });
+
+    connect(btnShowHide_, &QPushButton::clicked,
+            this, [this]() { setOverlaysVisible(!overlaysVisible_); });
+
 
     refreshNotesList();
     updateWindow(0);

@@ -31,7 +31,7 @@ class LauncherHelpMixin:
         add_heading("Inputs")
         add_bullets(
             [
-                "The viewer accepts ECG text/CSV exports from LabChart-style tools.",
+                "The viewer accepts ECG text exports from LabChart-style tools.",
                 "Use one channel per file for best results.",
             ]
         )
@@ -142,4 +142,5 @@ class LauncherHelpMixin:
         )
 
         ht.append("Tip: if the view becomes confusing, press Reset View in the viewer.\n")
+
 
