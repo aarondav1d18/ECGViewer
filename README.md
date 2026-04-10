@@ -31,9 +31,16 @@ This project is being done as part of a team project at the University of Glasgo
 
 Contributors:
 
+
 [Aaron David](https://github.com/aarondav1d18)
 
+[Jonatan Wiankowski](https://github.com/truthfulle)
+
+[Robbie Copeland](https://github.com/rc1600)
+
 [Murray Craig](https://github.com/Murray-Craig)
+
+[Khalifa Albeshr](https://github.com/kbkalb)
 
 
 ## Current State 
